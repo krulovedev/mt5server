@@ -741,17 +741,17 @@
       margin-bottom: 12px;
     }
 
-    .balance { 
+    .balance {
       font-size: 14px;
-       font-weight: bold;
-        color: #2196f3;
+      font-weight: bold;
+      color: #2196f3;
     }
 
-    .time { 
+    .time {
       font-size: 10px;
       color: gray;
-       margin-top: 10px;
-   }
+      margin-top: 10px;
+    }
   </style>
 </head>
 
@@ -759,7 +759,6 @@
 
   <header>
     <div class="logo">MT5</div>
-    <div class="balance" id="balance"></div> <div class="time" id="time"></div>
     <div class="header-right">
       <span>AR: <span id="countdown" style="color:var(--accent)">30s</span></span>
       <span id="clock">--:--:--</span>
@@ -959,13 +958,7 @@
 
     // ─── OVERVIEW ───
     async function loadOverview() {
-     /* try {
-        const response = await fetch(`${API}/api/balance`);
-        const data = await response.json(); document.getElementById("balance").innerHTML = "#"+data.balance; 
-        document.getElementById("time").innerHTML = " ("+data.timestamp+")";
-      } catch (e) {
 
-      }*/
 
       const showHidden = $('chk-show-hidden') && $('chk-show-hidden').checked;
       let allAccounts = [], atData = [];
@@ -982,7 +975,7 @@
       // Alltime banner
       const activeAliases = new Set(accounts.map(a => a.alias));
       const activeAtData = atData.filter(d => activeAliases.has(d.alias));
-      
+
       if (activeAtData.length) {
         const banner = $('alltime-banner');
         banner.style.display = 'block';
@@ -1088,7 +1081,7 @@
     }
 
     async function refreshDetail() {
-      
+
       if (!selectedAlias) return;
       $('dp-title').innerHTML = selectedAlias + ' <span class="spinner"></span>';
       const hrs = detailHours;

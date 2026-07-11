@@ -146,6 +146,57 @@ netsh advfirewall firewall add rule name="MT5Monitor" dir=in action=allow protoc
 - EA ใช้ **EventSetTimer** (ไม่ใช้ OnTick) → CPU ต่ำมาก
 - Server ใช้ **async/await + SQLite WAL mode** → RAM ~30MB
 - Dashboard **polling ทุก 30 วินาที** (ปรับได้)
-ailscale funnel --bg localhost:3000# mt5server
-# mt5server
-# mt5server
+ailscale funnel --bg localhost:3000
+---
+
+## Deploy บน Render.com
+
+### ขั้นตอน
+
+1. **Push โปรเจกต์ขึ้น GitHub** (ถ้ายังไม่มี repo)
+   ```bash
+   git init
+   git add .
+   git commit -m "Initial commit"
+   git remote add origin https://github.com/YOUR_USER/mt5server.git
+   git push -u origin main
+   ```
+
+2. **สร้าง Web Service บน Render**
+   - ไปที่ [render.com](https://render.com) → **New → Web Service**
+   - เลือก repository จาก GitHub
+   - Render จะอ่านค่าจาก `render.yaml` อัตโนมัติ
+
+   หรือตั้งค่าด้วยมือ:
+   | Setting       | ค่า                                          |
+   |---------------|----------------------------------------------|
+   | Runtime       | Python 3                                     |
+   | Build Command | `pip install -r requirements.txt`            |
+   | Start Command | `uvicorn server:app --host 0.0.0.0 --port $PORT` |
+
+3. **ตั้ง Environment Variables** ใน Render Dashboard → Environment:
+   | Key         | Value                    |
+   |-------------|--------------------------|
+   | `SECRET_KEY`| รหัสลับที่ต้องการ (เปลี่ยนจาก `mysecretkey`) |
+
+4. **เพิ่ม Persistent Disk** (สำคัญ! ไม่งั้น DB หายทุก deploy)
+   - Render Dashboard → ไปที่ service → **Disks → Add Disk**
+   - Mount Path: `/data`
+   - ขนาด: `1 GB` (free tier ไม่รองรับ disk → ต้องใช้ Starter plan ขึ้นไป)
+
+   > ⚠️ **Free Tier**: ไม่รองรับ persistent disk — ข้อมูล SQLite จะหายทุกครั้งที่ redeploy!
+   > แนะนำให้ upgrade เป็น Starter ($7/เดือน) ถ้าต้องการเก็บข้อมูลถาวร
+
+5. **อัปเดต MT5 EA** — เปลี่ยน `ServerURL` เป็น URL ของ Render:
+   ```
+   https://mt5-monitor.onrender.com/api/data
+   ```
+
+6. **อนุญาต WebRequest ใน MT5**
+   - Tools → Options → Expert Advisors → Allow WebRequest for listed URL
+   - เพิ่ม: `https://mt5-monitor.onrender.com`
+
+---
+
+> ⚠️ **Render Free Tier Sleep**: service จะ sleep หลัง 15 นาทีที่ไม่มีคนใช้
+> MT5 EA ที่ส่งข้อมูลทุก 60 วินาทีจะช่วย keep-alive service ได้โดยอัตโนมัติ
