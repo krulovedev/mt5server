@@ -15,7 +15,9 @@ import asyncio
 import json
 import os
 import re
+import socket
 import ssl as _ssl
+from urllib.parse import urlparse, urlunparse
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
@@ -28,6 +30,36 @@ from pydantic import BaseModel, Field
 # ===========================
 # CONFIG
 # ===========================
+def force_ipv4_in_url(url: str) -> str:
+    """แปลง Hostname ใน Connection string ให้เป็น IPv4 เสมอ เพื่อแก้ปัญหา Render ไม่รองรับ IPv6"""
+    try:
+        parsed = urlparse(url)
+        if not parsed.hostname:
+            return url
+        # ค้นหาเฉพาะ IPv4 (AF_INET)
+        addrinfo = socket.getaddrinfo(parsed.hostname, parsed.port or 5432, family=socket.AF_INET, proto=socket.IPPROTO_TCP)
+        if not addrinfo:
+            return url
+        ipv4_host = addrinfo[0][4][0]
+        print(f"[DB] resolved {parsed.hostname} -> IPv4: {ipv4_host}")
+        
+        auth = ""
+        if parsed.username:
+            auth = parsed.username
+            if parsed.password is not None:
+                auth += f":{parsed.password}"
+            auth += "@"
+        
+        new_netloc = f"{auth}{ipv4_host}"
+        if parsed.port:
+            new_netloc += f":{parsed.port}"
+            
+        new_parsed = parsed._replace(netloc=new_netloc)
+        return urlunparse(new_parsed)
+    except Exception as e:
+        print(f"[DB] Warning forcing IPv4: {e}")
+        return url
+
 # รองรับ Supabase URL ที่อาจขึ้นต้น "postgres://" และมี ?sslmode=require
 _raw_url   = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/mt5monitor")
 # 1. แก้ scheme
@@ -36,6 +68,8 @@ DATABASE_URL = _raw_url.replace("postgres://", "postgresql://", 1) if _raw_url.s
 DATABASE_URL = re.sub(r':\[([^\]@:/]+)\]@', r':\1@', DATABASE_URL)
 # 3. ตัด query parameters ทั้งหมดออก (เช่น ?pgbouncer=true, ?sslmode=require) เพราะ asyncpg ไม่รองรับ
 DATABASE_URL = DATABASE_URL.split('?')[0]
+# 4. บังคับเป็น IPv4 เพื่อป้องกัน Network is unreachable จาก IPv6 บน Render
+DATABASE_URL = force_ipv4_in_url(DATABASE_URL)
 
 SECRET_KEY  = os.environ.get("SECRET_KEY", "mysecretkey")   # ตั้งใน Render env vars
 MAX_HISTORY = 100_000                # เก็บ record สูงสุดต่อ account
