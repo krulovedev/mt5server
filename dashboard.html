@@ -1046,7 +1046,7 @@
         const ddColor_ = ddColor(dd);
         const eDDColor_ = ddColor(eDD);
         const profitClass = acc.profit >= 0 ? 'positive' : 'negative';
-        const status = getStatus(acc.timestamp);
+        const status = getStatus(acc.received_at);
         const card = document.createElement('div');
         card.className = 'account-card' + (selectedAlias === acc.alias ? ' selected' : '');
         card.onclick = () => selectAccount(acc.alias);
@@ -1100,7 +1100,7 @@
           <div class="dd-bar-fill" style="width:${Math.min(eDD, 100)}%;background:${eDDColor_}"></div>
         </div>
       </div>
-      <div class="card-footer">อัพเดท: ${fmtDate(acc.timestamp)}</div>
+      <div class="card-footer">อัพเดท: ${fmtDate(acc.received_at)}</div>
       <div class="card-actions">
         <button class="icon-btn" onclick="event.stopPropagation();showRenameModal('${acc.alias}','${(acc.display_name || acc.alias).replace(/'/g, '&#39;')}')" title="ตั้งชื่อ">✏️ ตั้งชื่อ</button>
         <button class="icon-btn warn" onclick="event.stopPropagation();toggleAccount('${acc.alias}')" title="ซ่อน/แสดง">${acc.active !== 0 ? '🙈 ซ่อน' : '👁 แสดง'}</button>
