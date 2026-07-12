@@ -1,8 +1,9 @@
 services:
   - type: web
     name: mt5-monitor
-    env: docker
-    dockerfilePath: ./Dockerfile
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python server.py"
     envVars:
       - key: SECRET_KEY
         value: mysecretkey          # ⚠️ เปลี่ยนเป็นรหัสที่ปลอดภัยใน Render Dashboard!
