@@ -900,7 +900,32 @@
       const v = +n;
       return (v >= 0 ? '+' : '') + v.toFixed(d);
     };
-    const fmtDate = s => s ? s.replace('T', ' ').substring(0, 19) : '—';
+    const fmtDate = s => {
+      if (!s) return '—';
+      try {
+        const hasTz = s.includes('Z') || /[+-]\d{2}:?\d{2}$/.test(s);
+        let date;
+        if (hasTz) {
+          date = new Date(s);
+        } else {
+          const clean = s.replace(' ', 'T');
+          date = new Date(clean + (clean.includes('+') || clean.includes('-') ? '' : '+07:00'));
+        }
+        if (isNaN(date.getTime())) return s;
+
+        return new Intl.DateTimeFormat('sv-SE', {
+          timeZone: 'Asia/Bangkok',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        }).format(date);
+      } catch (e) {
+        return s;
+      }
+    };
 
     function showToast(msg, color = 'var(--green)') {
       const t = $('toast');
@@ -918,7 +943,15 @@
 
     function getStatus(ts) {
       if (!ts) return 'offline';
-      const diff = (Date.now() - new Date(ts + (ts.includes('Z') ? '' : 'Z')).getTime()) / 1000;
+      let date;
+      const hasTz = ts.includes('Z') || /[+-]\d{2}:?\d{2}$/.test(ts);
+      if (hasTz) {
+        date = new Date(ts);
+      } else {
+        const clean = ts.replace(' ', 'T');
+        date = new Date(clean + (clean.includes('+') || clean.includes('-') ? '' : '+07:00'));
+      }
+      const diff = (Date.now() - date.getTime()) / 1000;
       if (diff < 120) return 'online';
       if (diff < 300) return 'stale';
       return 'offline';
@@ -927,7 +960,13 @@
     // ─── CLOCK ───
     setInterval(() => {
       const now = new Date();
-      $('clock').textContent = now.toTimeString().substring(0, 8);
+      const timeStr = new Intl.DateTimeFormat('sv-SE', {
+        timeZone: 'Asia/Bangkok',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      }).format(now);
+      $('clock').textContent = timeStr + ' (UTC+7)';
     }, 1000);
 
     // ─── AUTO REFRESH ───
@@ -1087,8 +1126,21 @@
       const hrs = detailHours;
       const end = new Date();
       const start = new Date(end - hrs * 3600000);
-      const startISO = start.toISOString();
-      const endISO = end.toISOString();
+      
+      const toBangkokStr = d => {
+        const parts = new Intl.DateTimeFormat('sv-SE', {
+          timeZone: 'Asia/Bangkok',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        }).format(d).split(' ');
+        return `${parts[0]}T${parts[1]}`;
+      };
+      const startISO = toBangkokStr(start);
+      const endISO = toBangkokStr(end);
 
       const [histRes, statsRes] = await Promise.all([
         fetch(`${API}/api/history/${selectedAlias}?start=${startISO}&end=${endISO}&limit=2000&field=balance,equity,drawdown_pct,profit,open_orders,total_lots,ts`),
@@ -1228,8 +1280,21 @@
     async function loadHistoryTable() {
       const alias = $('hist-account-sel').value;
       if (!alias) { showToast('กรุณาเลือก Account', 'var(--yellow)'); return; }
-      let start = $('hist-start').value || (new Date(Date.now() - 86400000)).toISOString().substring(0, 16);
-      let end = $('hist-end').value || new Date().toISOString().substring(0, 16);
+      
+      const toBangkokLocal = d => {
+        const parts = new Intl.DateTimeFormat('sv-SE', {
+          timeZone: 'Asia/Bangkok',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        }).format(d).split(' ');
+        return `${parts[0]}T${parts[1]}`;
+      };
+
+      let start = $('hist-start').value || toBangkokLocal(new Date(Date.now() - 86400000));
+      let end = $('hist-end').value || toBangkokLocal(new Date());
       const limit = $('hist-limit').value;
 
       if (start && start.length === 16) start += ':00';
@@ -1357,9 +1422,19 @@
       // Set default datetime
       const now = new Date();
       const yesterday = new Date(now - 86400000);
-      const toLocal = d => d.toISOString().substring(0, 16);
-      ['hist-start', 'detail-start'].forEach(id => { if ($(id) && !$(id).value) $(id).value = toLocal(yesterday); });
-      ['hist-end', 'detail-end'].forEach(id => { if ($(id) && !$(id).value) $(id).value = toLocal(now); });
+      const toBangkokLocal = d => {
+        const parts = new Intl.DateTimeFormat('sv-SE', {
+          timeZone: 'Asia/Bangkok',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        }).format(d).split(' ');
+        return `${parts[0]}T${parts[1]}`;
+      };
+      ['hist-start', 'detail-start'].forEach(id => { if ($(id) && !$(id).value) $(id).value = toBangkokLocal(yesterday); });
+      ['hist-end', 'detail-end'].forEach(id => { if ($(id) && !$(id).value) $(id).value = toBangkokLocal(now); });
     }
 
     async function loadDetailTab() {

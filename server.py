@@ -18,7 +18,7 @@ import re
 import socket
 import ssl as _ssl
 from urllib.parse import urlparse, urlunparse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
 import asyncpg
@@ -75,6 +75,9 @@ SECRET_KEY  = os.environ.get("SECRET_KEY", "mysecretkey")   # ตั้งใน
 MAX_HISTORY = 100_000                # เก็บ record สูงสุดต่อ account
 HOST        = "0.0.0.0"
 PORT        = int(os.environ.get("PORT", 8000))             # Render inject PORT อัตโนมัติ
+
+# เขตเวลา UTC+7 สำหรับการแสดงผลและการบันทึกเวลาเริ่มต้น
+TZ_BANGKOK  = timezone(timedelta(hours=7))
 
 # ===========================
 # APP SETUP
@@ -290,7 +293,7 @@ async def startup_event():
                         "buy_lots":        s.get("buy_lots", 0.0),
                         "sell_lots":       s.get("sell_lots", 0.0),
                         "timestamp":       s.get("ts"),
-                        "received_at":     datetime.now().isoformat(),
+                        "received_at":     datetime.now(TZ_BANGKOK).strftime('%Y-%m-%dT%H:%M:%S'),
                         "active":          acc["active"],
                     }
         print(f"[DB] โหลดข้อมูลลง Cache สำเร็จ: {len(latest_cache)} accounts")
@@ -315,7 +318,7 @@ async def receive_data(payload: MT5DataPayload):
     if payload.secret != SECRET_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    ts = payload.timestamp or datetime.utcnow().isoformat()
+    ts = payload.timestamp or datetime.now(TZ_BANGKOK).strftime('%Y-%m-%dT%H:%M:%S')
 
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -394,7 +397,7 @@ async def receive_data(payload: MT5DataPayload):
         "buy_lots":        payload.buy_lots,
         "sell_lots":       payload.sell_lots,
         "timestamp":       ts,
-        "received_at":     datetime.now().isoformat(),
+        "received_at":     datetime.now(TZ_BANGKOK).strftime('%Y-%m-%dT%H:%M:%S'),
         "active":          active,
     }
 
@@ -469,9 +472,9 @@ async def get_history(
 ):
     """ข้อมูลย้อนหลังของ account"""
     if not end:
-        end = datetime.utcnow().isoformat()
+        end = datetime.now(TZ_BANGKOK).strftime('%Y-%m-%dT%H:%M:%S')
     if not start:
-        start = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+        start = (datetime.now(TZ_BANGKOK) - timedelta(hours=24)).strftime('%Y-%m-%dT%H:%M:%S')
 
     # เลือก fields ที่ปลอดภัย (ป้องกัน SQL injection)
     allowed = {"balance","equity","margin","free_margin","margin_level","profit",
@@ -579,7 +582,7 @@ async def delete_account(alias: str):
 @app.get("/api/stats/{alias}")
 async def get_stats(alias: str, days: int = Query(7, ge=1, le=90)):
     """สถิติสรุปของ account ในช่วง N วัน"""
-    start = (datetime.utcnow() - timedelta(days=days)).isoformat()
+    start = (datetime.now(TZ_BANGKOK) - timedelta(days=days)).strftime('%Y-%m-%dT%H:%M:%S')
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
             SELECT
