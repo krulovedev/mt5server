@@ -1,13 +1,11 @@
 services:
   - type: web
     name: mt5-monitor
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    env: docker
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: SECRET_KEY
         value: mysecretkey          # ⚠️ เปลี่ยนเป็นรหัสที่ปลอดภัยใน Render Dashboard!
       - key: DATABASE_URL
         value: ""                   # ← วาง Supabase Connection String ที่นี่
-                                    #   (ดูได้จาก Supabase → Project Settings → Database → Connection string → URI)
-                                    #   รูปแบบ: postgresql://postgres:[PASSWORD]@db.[REF].supabase.co:5432/postgres
+                                    #   postgresql://postgres:[PASSWORD]@db.[REF].supabase.co:5432/postgres
