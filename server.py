@@ -32,10 +32,10 @@ from pydantic import BaseModel, Field
 _raw_url   = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/mt5monitor")
 # 1. แก้ scheme
 DATABASE_URL = _raw_url.replace("postgres://", "postgresql://", 1) if _raw_url.startswith("postgres://") else _raw_url
-# 2. ตัด sslmode ออกจาก URL (asyncpg ไม่รองรับ URL param นี้)
-DATABASE_URL = re.sub(r'[?&]sslmode=[^&]+', '', DATABASE_URL).rstrip('?').rstrip('&')
-# 3. ลบเครื่องหมาย [ ] ที่อาจครอบรหัสผ่านอยู่ (กรณีคัดลอกจากเทมเพลต Supabase ตรงๆ)
+# 2. ลบเครื่องหมาย [ ] ที่อาจครอบรหัสผ่านอยู่ (กรณีคัดลอกจากเทมเพลต Supabase ตรงๆ)
 DATABASE_URL = re.sub(r':\[([^\]@:/]+)\]@', r':\1@', DATABASE_URL)
+# 3. ตัด query parameters ทั้งหมดออก (เช่น ?pgbouncer=true, ?sslmode=require) เพราะ asyncpg ไม่รองรับ
+DATABASE_URL = DATABASE_URL.split('?')[0]
 
 SECRET_KEY  = os.environ.get("SECRET_KEY", "mysecretkey")   # ตั้งใน Render env vars
 MAX_HISTORY = 100_000                # เก็บ record สูงสุดต่อ account
