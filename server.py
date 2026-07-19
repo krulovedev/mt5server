@@ -893,11 +893,15 @@ async def get_alerts_settings():
 async def update_alerts_settings(payload: AlertSettingsPayload):
     """อัพเดท global alert settings"""
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT id FROM alert_settings ORDER BY id LIMIT 1")
+        row = await conn.fetchrow("SELECT id, bot_token, chat_id FROM alert_settings ORDER BY id LIMIT 1")
         if row:
+            # ถ้าไม่ได้ส่งมา (เป็นค่าว่าง) ให้ใช้ค่าเดิมใน DB
+            bot_token = payload.bot_token if payload.bot_token else row["bot_token"]
+            chat_id = payload.chat_id if payload.chat_id else row["chat_id"]
+            
             await conn.execute(
                 "UPDATE alert_settings SET global_enabled=$1, bot_token=$2, chat_id=$3, updated_at=NOW() WHERE id=$4",
-                payload.global_enabled, payload.bot_token, payload.chat_id, row["id"]
+                payload.global_enabled, bot_token, chat_id, row["id"]
             )
         else:
             await conn.execute(
