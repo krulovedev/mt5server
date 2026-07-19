@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
 import asyncpg
+import httpx
 from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -71,10 +72,12 @@ DATABASE_URL = DATABASE_URL.split('?')[0]
 # 4. บังคับเป็น IPv4 เพื่อป้องกัน Network is unreachable จาก IPv6 บน Render
 DATABASE_URL = force_ipv4_in_url(DATABASE_URL)
 
-SECRET_KEY  = os.environ.get("SECRET_KEY", "mysecretkey")   # ตั้งใน Render env vars
-MAX_HISTORY = 100_000                # เก็บ record สูงสุดต่อ account
-HOST        = "0.0.0.0"
-PORT        = int(os.environ.get("PORT", 8000))             # Render inject PORT อัตโนมัติ
+SECRET_KEY         = os.environ.get("SECRET_KEY", "mysecretkey")   # ตั้งใน Render env vars
+MAX_HISTORY        = 100_000                # เก็บ record สูงสุดต่อ account
+HOST               = "0.0.0.0"
+PORT               = int(os.environ.get("PORT", 8000))             # Render inject PORT อัตโนมัติ
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # เขตเวลา UTC+7 สำหรับการแสดงผลและการบันทึกเวลาเริ่มต้น
 TZ_BANGKOK  = timezone(timedelta(hours=7))
@@ -93,6 +96,10 @@ app.add_middleware(
 
 # Global connection pool (สร้างตอน startup)
 pool: asyncpg.Pool = None
+
+# Alert state: เก็บ in-memory alert counter per account
+# { alias: { "count": int, "last_alert_at": datetime|None, "notified_recovery": bool } }
+alert_state: Dict[str, Dict] = {}
 
 
 def _is_supabase(url: str) -> bool:
@@ -197,6 +204,33 @@ async def init_db(conn: asyncpg.Connection):
     await conn.execute("CREATE INDEX IF NOT EXISTS idx_snap_alias_ts ON snapshots(alias, ts DESC)")
     await conn.execute("CREATE INDEX IF NOT EXISTS idx_snap_ts ON snapshots(ts DESC)")
 
+    # ตาราง global alert settings
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS alert_settings (
+            id              SERIAL PRIMARY KEY,
+            global_enabled  BOOLEAN DEFAULT TRUE,
+            bot_token       TEXT DEFAULT '',
+            chat_id         TEXT DEFAULT '',
+            updated_at      TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+    # ใส่ default row ถ้ายังไม่มี
+    exists = await conn.fetchval("SELECT COUNT(*) FROM alert_settings")
+    if not exists:
+        await conn.execute(
+            "INSERT INTO alert_settings (global_enabled, bot_token, chat_id) VALUES (TRUE, $1, $2)",
+            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+        )
+
+    # ตาราง per-account alert settings
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS account_alert_settings (
+            alias       TEXT PRIMARY KEY,
+            enabled     BOOLEAN DEFAULT TRUE,
+            updated_at  TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+
     print("[DB] ฐานข้อมูล PostgreSQL พร้อมใช้งาน")
 
 
@@ -241,10 +275,160 @@ class AccountRename(BaseModel):
     display_name: str
 
 
+class AlertSettingsPayload(BaseModel):
+    global_enabled: bool = True
+    bot_token: str = ""
+    chat_id: str = ""
+
+
+class AccountAlertPayload(BaseModel):
+    alias: str
+    enabled: bool
+
+
 # ===========================
 # CACHE (latest data per account)
 # ===========================
 latest_cache: Dict[str, Dict] = {}
+
+# ─── Telegram Helper ───
+async def get_alert_settings() -> dict:
+    """โหลด alert settings จาก DB"""
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM alert_settings ORDER BY id LIMIT 1")
+        if row:
+            return dict(row)
+    except Exception:
+        pass
+    return {"global_enabled": True, "bot_token": TELEGRAM_BOT_TOKEN, "chat_id": TELEGRAM_CHAT_ID}
+
+
+async def get_account_alert_enabled(alias: str) -> bool:
+    """ตรวจสอบว่า account นี้เปิดการแจ้งเตือนหรือไม่"""
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT enabled FROM account_alert_settings WHERE alias=$1", alias
+            )
+        if row is not None:
+            return bool(row["enabled"])
+    except Exception:
+        pass
+    return True  # default: enabled
+
+
+async def send_telegram(message: str, bot_token: str = "", chat_id: str = "") -> bool:
+    """ส่งข้อความผ่าน Telegram Bot API"""
+    token = bot_token or TELEGRAM_BOT_TOKEN
+    cid   = chat_id   or TELEGRAM_CHAT_ID
+    if not token or not cid:
+        print("[Alert] ไม่ได้ตั้งค่า TELEGRAM_BOT_TOKEN หรือ TELEGRAM_CHAT_ID")
+        return False
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(url, json={"chat_id": cid, "text": message, "parse_mode": "HTML"})
+            if resp.status_code == 200:
+                print(f"[Alert] ส่ง Telegram สำเร็จ: {message[:60]}")
+                return True
+            else:
+                print(f"[Alert] Telegram error {resp.status_code}: {resp.text[:200]}")
+                return False
+    except Exception as e:
+        print(f"[Alert] Exception ส่ง Telegram: {e}")
+        return False
+
+
+async def alert_monitor_loop():
+    """Background task: ตรวจสอบบัญชีไม่ส่งข้อมูลทุก 5 นาที"""
+    await asyncio.sleep(30)  # รอให้ startup เสร็จก่อน
+    print("[Alert] เริ่ม Alert Monitor Loop")
+    while True:
+        try:
+            settings = await get_alert_settings()
+            global_enabled = settings.get("global_enabled", True)
+            bot_token      = settings.get("bot_token", "") or TELEGRAM_BOT_TOKEN
+            chat_id        = settings.get("chat_id", "")   or TELEGRAM_CHAT_ID
+
+            if global_enabled and bot_token and chat_id:
+                now = datetime.now(TZ_BANGKOK)
+                for alias, data in list(latest_cache.items()):
+                    # ตรวจสอบว่า account นี้เปิดแจ้งเตือนหรือไม่
+                    acc_enabled = await get_account_alert_enabled(alias)
+                    if not acc_enabled:
+                        continue
+
+                    received_str = data.get("received_at", "")
+                    if not received_str:
+                        continue
+
+                    try:
+                        # parse received_at (UTC+7 no-tz string)
+                        recv_dt = datetime.fromisoformat(received_str).replace(tzinfo=TZ_BANGKOK)
+                    except Exception:
+                        continue
+
+                    elapsed_min = (now - recv_dt).total_seconds() / 60
+
+                    state = alert_state.setdefault(alias, {
+                        "count": 0,
+                        "last_alert_at": None,
+                        "notified_recovery": False
+                    })
+
+                    if elapsed_min > 5:
+                        state["notified_recovery"] = False
+                        last = state["last_alert_at"]
+                        count = state["count"]
+
+                        if count < 3:
+                            # แจ้งเตือน 3 ครั้งแรก (ทุก 5 นาที)
+                            should_alert = (last is None) or ((now - last).total_seconds() >= 300)
+                        else:
+                            # หลังจาก 3 ครั้ง แจ้งทุก 1 ชั่วโมง
+                            should_alert = (last is None) or ((now - last).total_seconds() >= 3600)
+
+                        if should_alert:
+                            display = data.get("display_name") or alias
+                            elapsed_txt = f"{int(elapsed_min)} นาที" if elapsed_min < 60 else f"{elapsed_min/60:.1f} ชั่วโมง"
+                            if count < 3:
+                                msg = (
+                                    f"⚠️ <b>MT5 Monitor Alert</b>\n"
+                                    f"บัญชี <b>{display}</b> ({alias}) \n"
+                                    f"ไม่มีข้อมูลมาแล้ว <b>{elapsed_txt}</b>\n"
+                                    f"(ครั้งที่ {count + 1}/3 • {now.strftime('%H:%M:%S')} UTC+7)"
+                                )
+                            else:
+                                msg = (
+                                    f"🔴 <b>MT5 Monitor Alert (Hourly)</b>\n"
+                                    f"บัญชี <b>{display}</b> ({alias}) \n"
+                                    f"ยังไม่มีข้อมูลมาแล้ว <b>{elapsed_txt}</b>\n"
+                                    f"({now.strftime('%H:%M:%S')} UTC+7)"
+                                )
+                            ok = await send_telegram(msg, bot_token, chat_id)
+                            if ok:
+                                state["count"] += 1
+                                state["last_alert_at"] = now
+                    else:
+                        # ข้อมูลกลับมาแล้ว → reset
+                        if state["count"] > 0 and not state["notified_recovery"]:
+                            display = data.get("display_name") or alias
+                            msg = (
+                                f"✅ <b>MT5 Monitor</b>\n"
+                                f"บัญชี <b>{display}</b> ({alias}) กลับมาส่งข้อมูลแล้ว\n"
+                                f"({now.strftime('%H:%M:%S')} UTC+7)"
+                            )
+                            await send_telegram(msg, bot_token, chat_id)
+                            state["notified_recovery"] = True
+                        state["count"] = 0
+                        state["last_alert_at"] = None
+
+        except Exception as e:
+            print(f"[Alert] Loop error: {e}")
+
+        await asyncio.sleep(300)  # ตรวจสอบทุก 5 นาที
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -299,6 +483,9 @@ async def startup_event():
         print(f"[DB] โหลดข้อมูลลง Cache สำเร็จ: {len(latest_cache)} accounts")
     except Exception as e:
         print(f"[DB] Error loading cache: {e}")
+
+    # เริ่ม background alert monitoring
+    asyncio.create_task(alert_monitor_loop())
 
 
 @app.on_event("shutdown")
@@ -637,6 +824,40 @@ async def get_alltime_stats(alias: str):
     return dict(row) if row else {}
 
 
+# ─── NEW: History full range (no date limit) ───
+@app.get("/api/history_all/{alias}")
+async def get_history_all(
+    alias: str,
+    limit: int = Query(2000, ge=1, le=10000),
+    field: str = Query("balance,equity,drawdown_pct,profit,open_orders,total_lots,ts")
+):
+    """ดึงข้อมูลทั้งหมดตั้งแต่ต้น (all-time chart)"""
+    allowed = {"balance","equity","margin","free_margin","margin_level","profit",
+               "drawdown_amount","drawdown_pct","equity_dd_pct","open_orders",
+               "buy_orders","sell_orders","total_lots","buy_lots","sell_lots","ts"}
+    fields = [f for f in field.split(",") if f.strip() in allowed]
+    if not fields:
+        fields = ["balance","equity","drawdown_pct","profit","ts"]
+    if "ts" not in fields:
+        fields.append("ts")
+    cols = ", ".join(fields)
+    async with pool.acquire() as conn:
+        # ดึงทั้งหมดแต่ sample ให้เหลือ limit จุด
+        total = await conn.fetchval("SELECT COUNT(*) FROM snapshots WHERE alias=$1", alias)
+        step = max(1, total // limit)
+        rows = await conn.fetch(
+            f"""
+            SELECT {cols} FROM (
+                SELECT {cols}, ROW_NUMBER() OVER (ORDER BY ts ASC) AS rn
+                FROM snapshots WHERE alias=$1
+            ) sub WHERE rn % $2 = 1
+            ORDER BY ts ASC LIMIT $3
+            """,
+            alias, step, limit
+        )
+    return {"alias": alias, "count": len(rows), "total": total, "data": [dict(r) for r in rows]}
+
+
 @app.get("/api/alltime")
 async def get_alltime_all():
     """สถิติ all-time ของทุก account สำหรับแสดงบน overview"""
@@ -651,6 +872,98 @@ async def get_alltime_all():
             FROM snapshots GROUP BY alias
         """)
     return [dict(r) for r in rows]
+
+
+# ─── Alert Settings Endpoints ───
+@app.get("/api/alerts/settings")
+async def get_alerts_settings():
+    """ดู alert settings"""
+    settings = await get_alert_settings()
+    async with pool.acquire() as conn:
+        acc_rows = await conn.fetch("SELECT alias, enabled FROM account_alert_settings")
+    acc_settings = {r["alias"]: bool(r["enabled"]) for r in acc_rows}
+    # ซ่อน token (แสดงแค่ว่ามีหรือไม่)
+    result = dict(settings)
+    result["has_token"] = bool(result.get("bot_token", ""))
+    result["account_settings"] = acc_settings
+    return result
+
+
+@app.post("/api/alerts/settings")
+async def update_alerts_settings(payload: AlertSettingsPayload):
+    """อัพเดท global alert settings"""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT id FROM alert_settings ORDER BY id LIMIT 1")
+        if row:
+            await conn.execute(
+                "UPDATE alert_settings SET global_enabled=$1, bot_token=$2, chat_id=$3, updated_at=NOW() WHERE id=$4",
+                payload.global_enabled, payload.bot_token, payload.chat_id, row["id"]
+            )
+        else:
+            await conn.execute(
+                "INSERT INTO alert_settings (global_enabled, bot_token, chat_id) VALUES ($1, $2, $3)",
+                payload.global_enabled, payload.bot_token, payload.chat_id
+            )
+    return {"status": "ok"}
+
+
+@app.post("/api/alerts/account")
+async def update_account_alert(payload: AccountAlertPayload):
+    """เปิด/ปิดการแจ้งเตือนของ account"""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO account_alert_settings (alias, enabled, updated_at)
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (alias) DO UPDATE SET enabled=$2, updated_at=NOW()
+            """,
+            payload.alias, payload.enabled
+        )
+    return {"status": "ok", "alias": payload.alias, "enabled": payload.enabled}
+
+
+@app.post("/api/alerts/test")
+async def test_alert():
+    """ทดสอบส่ง Telegram"""
+    settings = await get_alert_settings()
+    bot_token = settings.get("bot_token", "") or TELEGRAM_BOT_TOKEN
+    chat_id   = settings.get("chat_id", "")   or TELEGRAM_CHAT_ID
+    now = datetime.now(TZ_BANGKOK)
+    msg = (
+        f"🔔 <b>MT5 Monitor — Test Alert</b>\n"
+        f"การแจ้งเตือนทำงานปกติ ✅\n"
+        f"เวลา: {now.strftime('%Y-%m-%d %H:%M:%S')} UTC+7"
+    )
+    ok = await send_telegram(msg, bot_token, chat_id)
+    if ok:
+        return {"status": "ok", "message": "ส่งข้อความทดสอบสำเร็จ"}
+    raise HTTPException(status_code=500, detail="ไม่สามารถส่ง Telegram ได้ ตรวจสอบ Bot Token และ Chat ID")
+
+
+@app.get("/api/alerts/status")
+async def get_alert_status():
+    """ดูสถานะการแจ้งเตือนปัจจุบันของทุก account"""
+    now = datetime.now(TZ_BANGKOK)
+    result = []
+    for alias, state in alert_state.items():
+        data = latest_cache.get(alias, {})
+        received_str = data.get("received_at", "")
+        elapsed_min = None
+        if received_str:
+            try:
+                recv_dt = datetime.fromisoformat(received_str).replace(tzinfo=TZ_BANGKOK)
+                elapsed_min = round((now - recv_dt).total_seconds() / 60, 1)
+            except Exception:
+                pass
+        result.append({
+            "alias": alias,
+            "display_name": data.get("display_name", alias),
+            "alert_count": state.get("count", 0),
+            "last_alert_at": state.get("last_alert_at").isoformat() if state.get("last_alert_at") else None,
+            "elapsed_minutes": elapsed_min,
+            "is_offline": (elapsed_min or 0) > 5
+        })
+    return result
 
 
 # ===========================
