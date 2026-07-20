@@ -200,6 +200,12 @@ async def init_db(conn: asyncpg.Connection):
             except Exception:
                 pass
 
+    # Normalize existing ts data format
+    try:
+        await conn.execute("UPDATE snapshots SET ts = REPLACE(REPLACE(ts, '.', '-'), ' ', 'T') WHERE ts LIKE '% %' OR ts LIKE '%.%'")
+    except Exception as e:
+        print("Migration error on ts:", e)
+
     # Index สำหรับ query เร็ว
     await conn.execute("CREATE INDEX IF NOT EXISTS idx_snap_alias_ts ON snapshots(alias, ts DESC)")
     await conn.execute("CREATE INDEX IF NOT EXISTS idx_snap_ts ON snapshots(ts DESC)")
@@ -506,6 +512,7 @@ async def receive_data(payload: MT5DataPayload):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     ts = payload.timestamp or datetime.now(TZ_BANGKOK).strftime('%Y-%m-%dT%H:%M:%S')
+    ts = ts.replace('.', '-').replace(' ', 'T')
 
     async with pool.acquire() as conn:
         async with conn.transaction():
