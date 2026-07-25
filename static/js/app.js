@@ -105,17 +105,25 @@ const API = '';
     }
     startCountdown();
 
-    function switchTab(name, btn) {
-      document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
-      document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-      $('tab-'+name).classList.add('active');
-      if(btn) btn.classList.add('active');
+    window.onTabLoaded = function(name) {
+      if(name==='overview') loadOverview();
       if(name==='settings') loadSettings();
       if(name==='detail'||name==='history') populateAccountSelects();
       if(name==='alerts') loadAlertsTab();
+    };
+
+    function switchTab(name, btn) {
+      document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+      const t = $('tab-'+name);
+      if(t) t.classList.add('active');
+      if(btn) btn.classList.add('active');
+      if(window.onTabLoaded) window.onTabLoaded(name);
     }
 
     async function loadOverview() {
+      const grid=$('accounts-grid');
+      if(!grid) return; // Not on overview tab
       const showHidden = $('chk-show-hidden')&&$('chk-show-hidden').checked;
       let allAccounts=[], atData=[];
       try {
@@ -126,12 +134,11 @@ const API = '';
         try{const res=await fetch(API+'/api/latest');allAccounts=await res.json();}catch(e2){}
       }
       const accounts = showHidden?allAccounts:allAccounts.filter(a=>a.active!==0);
-      const grid=$('accounts-grid');
 
       const activeAliases=new Set(accounts.map(a=>a.alias));
       const activeAtData=atData.filter(d=>activeAliases.has(d.alias));
 
-      if(activeAtData.length){
+      if(activeAtData.length && $('alltime-banner') && $('alltime-grid')){
         $('alltime-banner').style.display='block';
         const maxDD=activeAtData.reduce((a,b)=>b.max_drawdown_pct>a.max_drawdown_pct?b:a,activeAtData[0]);
         const maxPr=activeAtData.reduce((a,b)=>b.max_profit>a.max_profit?b:a,activeAtData[0]);
@@ -144,7 +151,7 @@ const API = '';
       <div class="alltime-item"><div class="al-label">📉 ขาดทุนมากที่สุด</div><div class="al-account">${minPr.alias}</div><div class="al-val" style="color:var(--red)">${fmt(minPr.min_profit)}</div></div>
       <div class="alltime-item"><div class="al-label">⚠️ Margin Level ต่ำสุด</div><div class="al-account">${minML.alias}</div><div class="al-val" style="color:var(--yellow)">${fmt(minML.min_margin_level)}%</div></div>
     `;
-      } else {
+      } else if($('alltime-banner')) {
         $('alltime-banner').style.display='none';
       }
 
