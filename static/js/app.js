@@ -496,9 +496,12 @@ const API = '';
       const accounts=await res.json();
       const opts=accounts.map(a=>`<option value="${a.alias}">${a.display_name||a.alias}</option>`).join('');
       ['detail-account-sel','hist-account-sel'].forEach(id=>{
-        const sel=$(id); const curr=sel.value;
-        sel.innerHTML='<option value="">-- เลือก Account --</option>'+opts;
-        if(curr) sel.value=curr;
+        const sel=$(id);
+        if(sel){
+          const curr=sel.value;
+          sel.innerHTML='<option value="">-- เลือก Account --</option>'+opts;
+          if(curr) sel.value=curr;
+        }
       });
       const now=new Date();
       const yesterday=new Date(now-86400000);
