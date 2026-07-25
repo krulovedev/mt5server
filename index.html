@@ -47,12 +47,15 @@
         const container = document.getElementById('tab-content-container');
         container.innerHTML = await loadTabHTML(tabId);
         
-        // Initialize tab logic based on app.js functions
-        if (tabId === 'overview') await loadOverview();
-        if (tabId === 'detail') await loadDetailAccounts();
-        if (tabId === 'history') await loadHistoryAccounts();
-        if (tabId === 'alerts') await loadAlertsTab();
-        if (tabId === 'settings') await loadSettingsTab();
+        if (window.onTabLoaded) {
+            window.onTabLoaded(tabId);
+        } else {
+            // Fallback just in case
+            if (tabId === 'overview' && typeof loadOverview === 'function') loadOverview();
+            if ((tabId === 'detail' || tabId === 'history') && typeof populateAccountSelects === 'function') populateAccountSelects();
+            if (tabId === 'alerts' && typeof loadAlertsTab === 'function') loadAlertsTab();
+            if (tabId === 'settings' && typeof loadSettings === 'function') loadSettings();
+        }
     };
     
     // Initial load
