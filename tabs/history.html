@@ -1,0 +1,17 @@
+<div style="display:flex; gap:12px; align-items:center; margin-bottom:20px; flex-wrap:wrap;">
+  <select id="hist-account-sel">
+    <option value="">-- เลือก Account --</option>
+  </select>
+  <input type="datetime-local" id="hist-start">
+  <input type="datetime-local" id="hist-end">
+  <select id="hist-limit">
+    <option value="100">100 แถว</option>
+    <option value="500">500 แถว</option>
+    <option value="1000" selected>1000 แถว</option>
+    <option value="5000">5000 แถว</option>
+  </select>
+  <button class="btn" onclick="loadHistoryTable()">โหลดข้อมูล</button>
+</div>
+<div id="history-table-wrap">
+  <div class="empty"><p>เลือก Account และกด "โหลดข้อมูล"</p></div>
+</div>

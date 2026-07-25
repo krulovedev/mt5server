@@ -1,0 +1,58 @@
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;" id="alerts-layout">
+
+  <div class="settings-card">
+    <h3>🤖 ตั้งค่า Telegram Bot</h3>
+    <div class="form-row">
+      <label>Bot Token</label>
+      <input type="password" id="tg-token" placeholder="1234567890:ABCdef...">
+    </div>
+    <div class="form-row">
+      <label>Chat ID</label>
+      <input type="text" id="tg-chatid" placeholder="-1001234567890">
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn" onclick="saveAlertSettings()" style="flex:1">💾 บันทึก</button>
+      <button class="btn secondary" onclick="testTelegram()" style="flex:1">📨 ทดสอบ</button>
+    </div>
+    <div id="tg-status" style="margin-top:10px;font-size:11px;color:var(--muted)"></div>
+
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">🔔 เปิดการแจ้งเตือนทั้งหมด</div>
+          <div class="toggle-sub">เปิด/ปิดการแจ้งเตือน Telegram ทุก Account</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="tg-global-enabled" onchange="saveAlertSettings()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div style="margin-top:12px;font-size:11px;color:var(--muted);line-height:1.8;">
+      <b style="color:var(--accent)">วิธีการแจ้งเตือน:</b><br>
+      • ตรวจสอบทุก <b>5 นาที</b><br>
+      • ไม่มีข้อมูลมา → แจ้งเตือน <b>3 ครั้ง</b> (ทุก 5 นาที)<br>
+      • หลังจาก 3 ครั้ง → แจ้งทุก <b>1 ชั่วโมง</b><br>
+      • เมื่อบัญชีกลับมา → แจ้งเตือนการกู้คืน
+    </div>
+  </div>
+
+  <div class="settings-card">
+    <h3>👥 การแจ้งเตือนแยกบัญชี</h3>
+    <div id="account-alert-settings">
+      <div class="empty"><p>กำลังโหลด...</p></div>
+    </div>
+  </div>
+
+  <div class="settings-card" style="grid-column:1/-1;">
+    <h3>📡 สถานะการแจ้งเตือนปัจจุบัน</h3>
+    <div style="margin-bottom:12px;">
+      <button class="btn secondary" onclick="loadAlertStatus()">🔄 รีเฟรช</button>
+    </div>
+    <div id="alert-status-list">
+      <div class="empty"><p>กด "รีเฟรช" เพื่อดูสถานะ</p></div>
+    </div>
+  </div>
+
+</div>

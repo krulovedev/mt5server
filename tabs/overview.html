@@ -1,0 +1,48 @@
+<!-- MODAL (Used for rename) -->
+<div id="modal-overlay" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <h3>✏️ ตั้งชื่อ Account</h3>
+    <input type="text" id="modal-name-input" placeholder="ชื่อที่ต้องการแสดง">
+    <div class="modal-btns">
+      <button class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+      <button class="btn" onclick="doRename()">💾 บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<div class="show-hidden-wrap"><label style="font-size:12px;color:var(--muted);cursor:pointer"><input
+      type="checkbox" id="chk-show-hidden" onchange="loadOverview()"> แสดง Account ที่ซ่อน</label></div>
+<div id="alltime-banner" class="alltime-banner" style="display:none">
+  <h3>🏆 สถิติสูงสุด / ต่ำสุด ตลอดเวลา (ทุก Account)</h3>
+  <div id="alltime-grid" class="alltime-grid"></div>
+</div>
+<div id="accounts-grid" class="accounts-grid">
+  <div class="empty">
+    <h2>ยังไม่มี Account</h2>
+    <p>รอข้อมูลจาก MT5 EA...<br>ตรวจสอบว่า EA ทำงานอยู่และ Server URL ถูกต้อง</p>
+  </div>
+</div>
+<div id="detail-panel" style="display:none">
+  <div class="detail-header">
+    <div class="detail-title" id="dp-title">—</div>
+    <div class="detail-controls">
+      <div class="range-btns">
+        <button class="range-btn active" onclick="setRange(1,'1h',this)">1H</button>
+        <button class="range-btn" onclick="setRange(3,'3h',this)">3H</button>
+        <button class="range-btn" onclick="setRange(6,'6h',this)">6H</button>
+        <button class="range-btn" onclick="setRange(24,'24h',this)">24H</button>
+        <button class="range-btn" onclick="setRange(168,'7D',this)">7D</button>
+        <button class="range-btn" onclick="setRange(720,'30D',this)">30D</button>
+        <button class="range-btn" onclick="setRange(0,'ALL',this)">ALL</button>
+      </div>
+      <button class="btn secondary" onclick="refreshDetail()">⟳ Refresh</button>
+    </div>
+  </div>
+  <div class="stats-strip" id="stats-strip"></div>
+  <div class="chart-grid">
+    <div class="chart-box"><h3>Balance / Equity</h3><canvas id="chart-be"></canvas></div>
+    <div class="chart-box"><h3>Drawdown %</h3><canvas id="chart-dd"></canvas></div>
+    <div class="chart-box"><h3>Profit / Loss</h3><canvas id="chart-pl"></canvas></div>
+    <div class="chart-box"><h3>Open Orders / Lots</h3><canvas id="chart-orders"></canvas></div>
+  </div>
+</div>

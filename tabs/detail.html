@@ -1,0 +1,11 @@
+<div style="display:flex; gap:12px; align-items:center; margin-bottom:20px; flex-wrap:wrap;">
+  <select id="detail-account-sel" onchange="loadDetailTab()">
+    <option value="">-- เลือก Account --</option>
+  </select>
+  <input type="datetime-local" id="detail-start">
+  <input type="datetime-local" id="detail-end">
+  <button class="btn" onclick="loadDetailTab()">ดูข้อมูล</button>
+</div>
+<div id="detail-tab-content">
+  <div class="empty"><p>เลือก Account และช่วงเวลาที่ต้องการ</p></div>
+</div>
