@@ -290,7 +290,7 @@
 <body>
 
   <header>
-    <div class="logo">MT5</div>
+    <div class="logo">MT5 v1.1</div>
     <div class="header-right">
       <span>AR: <span id="countdown" style="color:var(--accent)">30s</span></span>
       <span id="clock">--:--:--</span>
@@ -646,10 +646,17 @@
       <div class="metrics-grid">
         <div class="metric"><div class="metric-label">Balance</div><div class="metric-value">${fmt(acc.balance)} <span style="font-size:10px;color:var(--muted)">${acc.currency||'USD'}</span></div></div>
         <div class="metric"><div class="metric-label">Equity</div><div class="metric-value">${fmt(acc.equity)}</div></div>
-        <div class="metric"><div class="metric-label">Profit</div><div class="metric-value ${profitClass}">${fmtN(acc.profit)}</div></div>
+        
+        <div class="metric"><div class="metric-label">Profit Today</div><div class="metric-value ${acc.realized_today>=0?'positive':'negative'}">${fmtN(acc.realized_today)}</div></div>
+        <div class="metric"><div class="metric-label">Profit This Week</div><div class="metric-value ${acc.realized_week>=0?'positive':'negative'}">${fmtN(acc.realized_week)}</div></div>
+        
+        <div class="metric"><div class="metric-label">Profit All-Time</div><div class="metric-value ${acc.realized_all>=0?'positive':'negative'}">${fmtN(acc.realized_all)}</div></div>
+        <div class="metric"><div class="metric-label">Floating Profit</div><div class="metric-value ${profitClass}">${fmtN(acc.profit)}</div></div>
+        
         <div class="metric"><div class="metric-label">Margin Level</div><div class="metric-value ${acc.margin_level>200?'positive':acc.margin_level>100?'warn':'negative'}">${fmt(acc.margin_level)}%</div></div>
-        <div class="metric"><div class="metric-label">Open Orders</div><div class="metric-value">${acc.open_orders||0} <span style="font-size:10px;color:var(--muted)">(${fmt(acc.total_lots,2)} lots)</span><br><span style="font-size:10px;color:var(--green)">▲Buy:${acc.buy_orders||0} (${fmt(acc.buy_lots||0,2)}L)</span> <span style="font-size:10px;color:var(--red)"><br>▼Sell:${acc.sell_orders||0} (${fmt(acc.sell_lots||0,2)}L)</span></div></div>
         <div class="metric"><div class="metric-label">Free Margin</div><div class="metric-value">${fmt(acc.free_margin)}</div></div>
+        
+        <div class="metric" style="grid-column: 1 / -1;"><div class="metric-label">Open Orders</div><div class="metric-value">${acc.open_orders||0} <span style="font-size:10px;color:var(--muted)">(${fmt(acc.total_lots,2)} lots)</span> <span style="font-size:10px;color:var(--green)">▲Buy:${acc.buy_orders||0}</span> <span style="font-size:10px;color:var(--red)">▼Sell:${acc.sell_orders||0}</span></div></div>
       </div>
       <div class="dd-bar-wrap">
         <div class="dd-bar-label"><span>Bal DD <span style="font-size:9px;color:var(--muted)">(from peak)</span></span><span style="color:${ddColor_}">${fmt(dd,2)}%</span></div>

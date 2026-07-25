@@ -9,7 +9,7 @@
 </head>
 <body>
   <header>
-    <div class="logo">MT5 MONITOR</div>
+    <div class="logo">MT5 MONITOR v1.1</div>
     <div class="header-right">
       <div id="clock">--:--:--</div>
       <div id="server-status" style="color: var(--muted);">WAITING</div>
@@ -32,11 +32,11 @@
 
   <div id="toast" class="toast"></div>
 
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/app.js?v=1.1"></script>
   <script>
     // SPA Loader Logic
     async function loadTabHTML(tabId) {
-        const res = await fetch('/tabs/' + tabId + '.html');
+        const res = await fetch('/tabs/' + tabId + '.html?v=1.1');
         return await res.text();
     }
     
