@@ -95,7 +95,8 @@ const API = '';
       refreshTimer=30;
       countdownInterval=setInterval(()=>{
         refreshTimer--;
-        $('countdown').textContent=refreshTimer+'s';
+        const el = $('countdown');
+        if(el) el.textContent=refreshTimer+'s';
         if(refreshTimer<=0){
           refreshTimer=30;
           loadOverview();
@@ -163,10 +164,10 @@ const API = '';
           <div class="metric"><div class="metric-label">Balance</div><div class="metric-value">${fmt(acc.balance)} <span style="font-size:10px;color:var(--muted)">${acc.currency||'USD'}</span></div></div>
           <div class="metric"><div class="metric-label">Equity</div><div class="metric-value">${fmt(acc.equity)}</div></div>
           
-          <div class="metric"><div class="metric-label">Profit Today</div><div class="metric-value ${acc.realized_today>=0?'positive':'negative'}">${fmtN(acc.realized_today)}</div></div>
-          <div class="metric"><div class="metric-label">Profit This Week</div><div class="metric-value ${acc.realized_week>=0?'positive':'negative'}">${fmtN(acc.realized_week)}</div></div>
+          <div class="metric"><div class="metric-label">Profit Today</div><div class="metric-value" id="rt-${acc.alias}">${acc.realized_today==null?'...':fmtN(acc.realized_today)}</div></div>
+          <div class="metric"><div class="metric-label">Profit This Week</div><div class="metric-value" id="rw-${acc.alias}">${acc.realized_week==null?'...':fmtN(acc.realized_week)}</div></div>
           
-          <div class="metric"><div class="metric-label">Profit All-Time</div><div class="metric-value ${acc.realized_all>=0?'positive':'negative'}">${fmtN(acc.realized_all)}</div></div>
+          <div class="metric"><div class="metric-label">Profit All-Time</div><div class="metric-value" id="ra-${acc.alias}">${acc.realized_all==null?'...':fmtN(acc.realized_all)}</div></div>
           <div class="metric"><div class="metric-label">Floating Profit</div><div class="metric-value ${profitClass}">${fmtN(acc.profit)}</div></div>
           
           <div class="metric"><div class="metric-label">Margin Level</div><div class="metric-value ${acc.margin_level>200?'positive':acc.margin_level>100?'warn':'negative'}">${fmt(acc.margin_level)}%</div></div>
@@ -190,6 +191,23 @@ const API = '';
           grid.appendChild(card);
         });
       }
+
+      // 1.5. Fetch /api/realized-profits asynchronously and update realized profits
+      fetch(API+'/api/realized-profits').then(r=>r.json()).then(stats=>{
+        for(let alias in stats){
+          const s = stats[alias];
+          const update = (id, val) => {
+            const el = document.getElementById(id+'-'+alias);
+            if(el){
+              el.textContent = fmtN(val);
+              el.className = 'metric-value '+(val>=0?'positive':'negative');
+            }
+          };
+          update('rt', s.realized_today);
+          update('rw', s.realized_week);
+          update('ra', s.realized_all);
+        }
+      }).catch(e=>console.error('Failed to load realized stats',e));
 
       // 2. Fetch /api/alltime asynchronously and update the banner later
       fetch(API+'/api/alltime').then(r=>r.json()).then(atData => {
