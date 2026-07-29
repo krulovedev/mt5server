@@ -31,7 +31,7 @@ async def get_latest():
 
 @router.get("/api/realized-profits")
 async def get_stats_realized():
-    """คำนวณกำไร realized แบบ asynchronous"""
+    """คำนวณกำไร realized โดยใช้ snapshot แรกสุดในฐานข้อมูลเป็น baseline (ไม่นับก่อนเริ่มบันทึก)"""
     global last_bals_update, cached_historical
     now = datetime.now(db.TZ_BANGKOK)
     
@@ -43,18 +43,34 @@ async def get_stats_realized():
             
             new_cache = {}
             for alias in db.latest_cache.keys():
-                row_today = await conn.fetchrow("SELECT balance, withdrawal FROM snapshots WHERE alias=$1 AND ts < $2 ORDER BY ts DESC LIMIT 1", alias, today_start)
-                row_week = await conn.fetchrow("SELECT balance, withdrawal FROM snapshots WHERE alias=$1 AND ts < $2 ORDER BY ts DESC LIMIT 1", alias, week_start)
+                # Snapshot แรกสุดในฐานข้อมูล = baseline
+                row_first = await conn.fetchrow(
+                    "SELECT balance, withdrawal FROM snapshots WHERE alias=$1 ORDER BY ts ASC LIMIT 1",
+                    alias
+                )
+                # Snapshot ก่อนต้นวัน
+                row_today = await conn.fetchrow(
+                    "SELECT balance, withdrawal FROM snapshots WHERE alias=$1 AND ts < $2 ORDER BY ts DESC LIMIT 1",
+                    alias, today_start
+                )
+                # Snapshot ก่อนต้นสัปดาห์
+                row_week = await conn.fetchrow(
+                    "SELECT balance, withdrawal FROM snapshots WHERE alias=$1 AND ts < $2 ORDER BY ts DESC LIMIT 1",
+                    alias, week_start
+                )
+                # fallback ไปใช้ first snapshot ถ้าไม่มีก่อนต้นวัน/อาทิตย์
                 if not row_today:
-                    row_today = await conn.fetchrow("SELECT balance, withdrawal FROM snapshots WHERE alias=$1 ORDER BY ts ASC LIMIT 1", alias)
+                    row_today = row_first
                 if not row_week:
-                    row_week = await conn.fetchrow("SELECT balance, withdrawal FROM snapshots WHERE alias=$1 ORDER BY ts ASC LIMIT 1", alias)
+                    row_week = row_first
                 
                 new_cache[alias] = {
-                    "bt": row_today["balance"] if row_today else None,
+                    "bf": row_first["balance"]    if row_first else None,
+                    "wf": row_first["withdrawal"] if row_first else None,
+                    "bt": row_today["balance"]    if row_today else None,
                     "wt": row_today["withdrawal"] if row_today else None,
-                    "bw": row_week["balance"] if row_week else None,
-                    "ww": row_week["withdrawal"] if row_week else None,
+                    "bw": row_week["balance"]     if row_week else None,
+                    "ww": row_week["withdrawal"]  if row_week else None,
                 }
             cached_historical = new_cache
             last_bals_update = now
@@ -62,25 +78,30 @@ async def get_stats_realized():
     result = {}
     for alias, data in db.latest_cache.items():
         hist = cached_historical.get(alias, {})
-        initial_balance = data.get("initial_balance", 0)
-        
-        bt = hist.get("bt")
-        wt = hist.get("wt")
-        bw = hist.get("bw")
-        ww = hist.get("ww")
-        
-        if bt is None: bt = initial_balance
-        if wt is None: wt = 0.0
-        if bw is None: bw = initial_balance
-        if ww is None: ww = 0.0
         
         current_bal = data.get("balance", 0.0)
         current_withdrawal = data.get("withdrawal", 0.0)
         
+        # Baseline = snapshot แรกสุด
+        bf = hist.get("bf")
+        wf = hist.get("wf")
+        if bf is None:
+            result[alias] = {"realized_today": None, "realized_week": None, "realized_all": None}
+            continue
+        wf = wf or 0.0
+        
+        # Today/Week baselines (fallback = first snapshot)
+        bt = hist.get("bt") if hist.get("bt") is not None else bf
+        wt = hist.get("wt") if hist.get("wt") is not None else wf
+        bw = hist.get("bw") if hist.get("bw") is not None else bf
+        ww = hist.get("ww") if hist.get("ww") is not None else wf
+        
+        # สูตร: (balance_now + withdrawal_now) - (balance_past + withdrawal_past)
+        # withdrawal ก่อนบันทึกหักกันเองในสมการ ได้ผลถูกต้องเสมอ
         result[alias] = {
             "realized_today": (current_bal + current_withdrawal) - (bt + wt),
-            "realized_week": (current_bal + current_withdrawal) - (bw + ww),
-            "realized_all": (current_bal + current_withdrawal) - initial_balance
+            "realized_week":  (current_bal + current_withdrawal) - (bw + ww),
+            "realized_all":   (current_bal + current_withdrawal) - (bf + wf),
         }
     return result
 
