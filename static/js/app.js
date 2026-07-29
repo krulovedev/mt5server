@@ -125,92 +125,93 @@ const API = '';
       const grid=$('accounts-grid');
       if(!grid) return; // Not on overview tab
       const showHidden = $('chk-show-hidden')&&$('chk-show-hidden').checked;
-      let allAccounts=[], atData=[];
+      
+      // 1. Fetch only /api/latest (now extremely fast) to render cards instantly
+      let allAccounts=[];
       try {
-        const [res,atRes]=await Promise.all([fetch(API+'/api/latest'),fetch(API+'/api/alltime')]);
+        const res=await fetch(API+'/api/latest');
         allAccounts=await res.json();
-        if(atRes.ok) atData=await atRes.json();
-      } catch(e) {
-        try{const res=await fetch(API+'/api/latest');allAccounts=await res.json();}catch(e2){}
-      }
+      } catch(e) {}
+      
       const accounts = showHidden?allAccounts:allAccounts.filter(a=>a.active!==0);
 
-      const activeAliases=new Set(accounts.map(a=>a.alias));
-      const activeAtData=atData.filter(d=>activeAliases.has(d.alias));
-
-      if(activeAtData.length && $('alltime-banner') && $('alltime-grid')){
-        $('alltime-banner').style.display='block';
-        const maxDD=activeAtData.reduce((a,b)=>b.max_drawdown_pct>a.max_drawdown_pct?b:a,activeAtData[0]);
-        const maxPr=activeAtData.reduce((a,b)=>b.max_profit>a.max_profit?b:a,activeAtData[0]);
-        const minPr=activeAtData.reduce((a,b)=>b.min_profit<a.min_profit?b:a,activeAtData[0]);
-        const withML=activeAtData.filter(a=>a.min_margin_level!=null&&a.min_margin_level>0);
-        const minML=withML.length?withML.reduce((a,b)=>b.min_margin_level<a.min_margin_level?b:a,withML[0]):activeAtData[0];
-        $('alltime-grid').innerHTML=`
-      <div class="alltime-item"><div class="al-label">📉 Drawdown มากที่สุด</div><div class="al-account">${maxDD.alias}</div><div class="al-val" style="color:var(--red)">${fmt(maxDD.max_drawdown_pct)}%</div></div>
-      <div class="alltime-item"><div class="al-label">📈 กำไรมากที่สุด</div><div class="al-account">${maxPr.alias}</div><div class="al-val" style="color:var(--green)">+${fmt(maxPr.max_profit)}</div></div>
-      <div class="alltime-item"><div class="al-label">📉 ขาดทุนมากที่สุด</div><div class="al-account">${minPr.alias}</div><div class="al-val" style="color:var(--red)">${fmt(minPr.min_profit)}</div></div>
-      <div class="alltime-item"><div class="al-label">⚠️ Margin Level ต่ำสุด</div><div class="al-account">${minML.alias}</div><div class="al-val" style="color:var(--yellow)">${fmt(minML.min_margin_level)}%</div></div>
-    `;
-      } else if($('alltime-banner')) {
-        $('alltime-banner').style.display='none';
-      }
-
+      // Render account cards immediately
       if(!accounts.length){
         grid.innerHTML=`<div class="empty"><h2>ยังไม่มี Account</h2><p>รอข้อมูลจาก MT5 EA...</p></div>`;
-        return;
+      } else {
+        grid.innerHTML='';
+        accounts.sort((a,b)=>(a.display_name||a.alias).localeCompare(b.display_name||b.alias));
+        accounts.forEach(acc=>{
+          const dd=acc.drawdown_pct||0;
+          const eDD=acc.equity_dd_pct||0;
+          const ddColor_=ddColor(dd);
+          const eDDColor_=ddColor(eDD);
+          const profitClass=acc.profit>=0?'positive':'negative';
+          const status=getStatus(acc.received_at);
+          const card=document.createElement('div');
+          card.className='account-card'+(selectedAlias===acc.alias?' selected':'');
+          card.onclick=()=>selectAccount(acc.alias,card);
+          card.innerHTML=`
+        <div class="card-header">
+          <div>
+            <div class="account-name">${acc.display_name||acc.alias}</div>
+            <div class="account-num">${acc.alias} · #${acc.account_number} · ${acc.broker||'—'} · 1:${acc.leverage}</div>
+          </div>
+          <div class="status-dot ${status}"></div>
+        </div>
+        <div class="metrics-grid">
+          <div class="metric"><div class="metric-label">Balance</div><div class="metric-value">${fmt(acc.balance)} <span style="font-size:10px;color:var(--muted)">${acc.currency||'USD'}</span></div></div>
+          <div class="metric"><div class="metric-label">Equity</div><div class="metric-value">${fmt(acc.equity)}</div></div>
+          
+          <div class="metric"><div class="metric-label">Profit Today</div><div class="metric-value ${acc.realized_today>=0?'positive':'negative'}">${fmtN(acc.realized_today)}</div></div>
+          <div class="metric"><div class="metric-label">Profit This Week</div><div class="metric-value ${acc.realized_week>=0?'positive':'negative'}">${fmtN(acc.realized_week)}</div></div>
+          
+          <div class="metric"><div class="metric-label">Profit All-Time</div><div class="metric-value ${acc.realized_all>=0?'positive':'negative'}">${fmtN(acc.realized_all)}</div></div>
+          <div class="metric"><div class="metric-label">Floating Profit</div><div class="metric-value ${profitClass}">${fmtN(acc.profit)}</div></div>
+          
+          <div class="metric"><div class="metric-label">Margin Level</div><div class="metric-value ${acc.margin_level>200?'positive':acc.margin_level>100?'warn':'negative'}">${fmt(acc.margin_level)}%</div></div>
+          <div class="metric"><div class="metric-label">Free Margin</div><div class="metric-value">${fmt(acc.free_margin)}</div></div>
+          
+          <div class="metric" style="grid-column: 1 / -1;"><div class="metric-label">Open Orders</div><div class="metric-value">${acc.open_orders||0} <span style="font-size:10px;color:var(--muted)">(${fmt(acc.total_lots,2)} lots)</span> <span style="font-size:10px;color:var(--green)">▲Buy:${acc.buy_orders||0}</span> <span style="font-size:10px;color:var(--red)">▼Sell:${acc.sell_orders||0}</span></div></div>
+        </div>
+        <div class="dd-bar-wrap">
+          <div class="dd-bar-label"><span>Bal DD <span style="font-size:9px;color:var(--muted)">(from peak)</span></span><span style="color:${ddColor_}">${fmt(dd,2)}%</span></div>
+          <div class="dd-bar-bg"><div class="dd-bar-fill" style="width:${Math.min(dd,100)}%;background:${ddColor_}"></div></div>
+          <div class="dd-bar-label" style="margin-top:6px"><span>Eq DD <span style="font-size:9px;color:var(--muted)">(floating)</span></span><span style="color:${eDDColor_}">${fmt(eDD,2)}%</span></div>
+          <div class="dd-bar-bg"><div class="dd-bar-fill" style="width:${Math.min(eDD,100)}%;background:${eDDColor_}"></div></div>
+        </div>
+        <div class="card-footer">อัพเดท: ${fmtDate(acc.received_at)}</div>
+        <div class="card-actions">
+          <button class="icon-btn" onclick="event.stopPropagation();showRenameModal('${acc.alias}','${(acc.display_name||acc.alias).replace(/'/g,"&#39;")}')">✏️ ตั้งชื่อ</button>
+          <button class="icon-btn warn" onclick="event.stopPropagation();toggleAccount('${acc.alias}')">${acc.active!==0?'🙈 ซ่อน':'👁 แสดง'}</button>
+        </div>
+      `;
+          if(acc.active===0) card.classList.add('hidden-acc');
+          grid.appendChild(card);
+        });
       }
 
-      grid.innerHTML='';
-      accounts.sort((a,b)=>(a.display_name||a.alias).localeCompare(b.display_name||b.alias));
-
-      accounts.forEach(acc=>{
-        const dd=acc.drawdown_pct||0;
-        const eDD=acc.equity_dd_pct||0;
-        const ddColor_=ddColor(dd);
-        const eDDColor_=ddColor(eDD);
-        const profitClass=acc.profit>=0?'positive':'negative';
-        const status=getStatus(acc.received_at);
-        const card=document.createElement('div');
-        card.className='account-card'+(selectedAlias===acc.alias?' selected':'');
-        card.onclick=()=>selectAccount(acc.alias,card);
-        card.innerHTML=`
-      <div class="card-header">
-        <div>
-          <div class="account-name">${acc.display_name||acc.alias}</div>
-          <div class="account-num">${acc.alias} · #${acc.account_number} · ${acc.broker||'—'} · 1:${acc.leverage}</div>
-        </div>
-        <div class="status-dot ${status}"></div>
-      </div>
-      <div class="metrics-grid">
-        <div class="metric"><div class="metric-label">Balance</div><div class="metric-value">${fmt(acc.balance)} <span style="font-size:10px;color:var(--muted)">${acc.currency||'USD'}</span></div></div>
-        <div class="metric"><div class="metric-label">Equity</div><div class="metric-value">${fmt(acc.equity)}</div></div>
-        
-        <div class="metric"><div class="metric-label">Profit Today</div><div class="metric-value ${acc.realized_today>=0?'positive':'negative'}">${fmtN(acc.realized_today)}</div></div>
-        <div class="metric"><div class="metric-label">Profit This Week</div><div class="metric-value ${acc.realized_week>=0?'positive':'negative'}">${fmtN(acc.realized_week)}</div></div>
-        
-        <div class="metric"><div class="metric-label">Profit All-Time</div><div class="metric-value ${acc.realized_all>=0?'positive':'negative'}">${fmtN(acc.realized_all)}</div></div>
-        <div class="metric"><div class="metric-label">Floating Profit</div><div class="metric-value ${profitClass}">${fmtN(acc.profit)}</div></div>
-        
-        <div class="metric"><div class="metric-label">Margin Level</div><div class="metric-value ${acc.margin_level>200?'positive':acc.margin_level>100?'warn':'negative'}">${fmt(acc.margin_level)}%</div></div>
-        <div class="metric"><div class="metric-label">Free Margin</div><div class="metric-value">${fmt(acc.free_margin)}</div></div>
-        
-        <div class="metric" style="grid-column: 1 / -1;"><div class="metric-label">Open Orders</div><div class="metric-value">${acc.open_orders||0} <span style="font-size:10px;color:var(--muted)">(${fmt(acc.total_lots,2)} lots)</span> <span style="font-size:10px;color:var(--green)">▲Buy:${acc.buy_orders||0}</span> <span style="font-size:10px;color:var(--red)">▼Sell:${acc.sell_orders||0}</span></div></div>
-      </div>
-      <div class="dd-bar-wrap">
-        <div class="dd-bar-label"><span>Bal DD <span style="font-size:9px;color:var(--muted)">(from peak)</span></span><span style="color:${ddColor_}">${fmt(dd,2)}%</span></div>
-        <div class="dd-bar-bg"><div class="dd-bar-fill" style="width:${Math.min(dd,100)}%;background:${ddColor_}"></div></div>
-        <div class="dd-bar-label" style="margin-top:6px"><span>Eq DD <span style="font-size:9px;color:var(--muted)">(floating)</span></span><span style="color:${eDDColor_}">${fmt(eDD,2)}%</span></div>
-        <div class="dd-bar-bg"><div class="dd-bar-fill" style="width:${Math.min(eDD,100)}%;background:${eDDColor_}"></div></div>
-      </div>
-      <div class="card-footer">อัพเดท: ${fmtDate(acc.received_at)}</div>
-      <div class="card-actions">
-        <button class="icon-btn" onclick="event.stopPropagation();showRenameModal('${acc.alias}','${(acc.display_name||acc.alias).replace(/'/g,"&#39;")}')">✏️ ตั้งชื่อ</button>
-        <button class="icon-btn warn" onclick="event.stopPropagation();toggleAccount('${acc.alias}')">${acc.active!==0?'🙈 ซ่อน':'👁 แสดง'}</button>
-      </div>
-    `;
-        if(acc.active===0) card.classList.add('hidden-acc');
-        grid.appendChild(card);
-      });
+      // 2. Fetch /api/alltime asynchronously and update the banner later
+      fetch(API+'/api/alltime').then(r=>r.json()).then(atData => {
+        const activeAliases=new Set(accounts.map(a=>a.alias));
+        const activeAtData=atData.filter(d=>activeAliases.has(d.alias));
+        if(activeAtData.length && $('alltime-banner') && $('alltime-grid')){
+          $('alltime-banner').style.display='block';
+          const maxDD=activeAtData.reduce((a,b)=>b.max_drawdown_pct>a.max_drawdown_pct?b:a,activeAtData[0]);
+          const maxPr=activeAtData.reduce((a,b)=>b.max_profit>a.max_profit?b:a,activeAtData[0]);
+          const minPr=activeAtData.reduce((a,b)=>b.min_profit<a.min_profit?b:a,activeAtData[0]);
+          const withML=activeAtData.filter(a=>a.min_margin_level!=null&&a.min_margin_level>0);
+          const minML=withML.length?withML.reduce((a,b)=>b.min_margin_level<a.min_margin_level?b:a,withML[0]):activeAtData[0];
+          $('alltime-grid').innerHTML=`
+        <div class="alltime-item"><div class="al-label">📉 Drawdown มากที่สุด</div><div class="al-account">${maxDD.alias}</div><div class="al-val" style="color:var(--red)">${fmt(maxDD.max_drawdown_pct)}%</div></div>
+        <div class="alltime-item"><div class="al-label">📈 กำไรมากที่สุด</div><div class="al-account">${maxPr.alias}</div><div class="al-val" style="color:var(--green)">+${fmt(maxPr.max_profit)}</div></div>
+        <div class="alltime-item"><div class="al-label">📉 ขาดทุนมากที่สุด</div><div class="al-account">${minPr.alias}</div><div class="al-val" style="color:var(--red)">${fmt(minPr.min_profit)}</div></div>
+        <div class="alltime-item"><div class="al-label">⚠️ Margin Level ต่ำสุด</div><div class="al-account">${minML.alias}</div><div class="al-val" style="color:var(--yellow)">${fmt(minML.min_margin_level)}%</div></div>
+      `;
+        } else if($('alltime-banner')) {
+          $('alltime-banner').style.display='none';
+        }
+      }).catch(e=>{});
     }
 
     function selectAccount(alias, card) {

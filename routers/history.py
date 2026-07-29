@@ -125,28 +125,43 @@ async def get_alltime_stats(alias: str):
         """, alias)
     return dict(row) if row else {}
 
+last_alltime_update = None
+cached_alltime_summary = []
+
 @router.get("/api/alltime")
 async def get_alltime_all():
     """สถิติ all-time ของทุก account สำหรับแสดงบน overview"""
-    async with db.pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT
-                alias,
-                MAX(drawdown_pct)   as max_drawdown_pct,
-                MAX(profit)         as max_profit,
-                MIN(profit)         as min_profit,
-                MAX(balance)        as max_balance,
-                MIN(balance)        as min_balance,
-                MIN(margin_level)   as min_margin_level
-            FROM snapshots GROUP BY alias
-        """)
-    summary = [dict(r) for r in rows]
+    global last_alltime_update, cached_alltime_summary
+    now = datetime.now(db.TZ_BANGKOK)
+
+    if last_alltime_update is None or (now - last_alltime_update).total_seconds() > 300:
+        async with db.pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT
+                    alias,
+                    MAX(drawdown_pct)   as max_drawdown_pct,
+                    MAX(profit)         as max_profit,
+                    MIN(profit)         as min_profit,
+                    MAX(balance)        as max_balance,
+                    MIN(balance)        as min_balance,
+                    MIN(margin_level)   as min_margin_level
+                FROM snapshots GROUP BY alias
+            """)
+        summary = [dict(r) for r in rows]
+        cached_alltime_summary = summary
+        last_alltime_update = now
+    else:
+        summary = cached_alltime_summary
+
+    result = []
     for s in summary:
-        if s["alias"] in db.latest_cache:
-            s.update({
-                "balance":      db.latest_cache[s["alias"]]["balance"],
-                "equity":       db.latest_cache[s["alias"]]["equity"],
-                "drawdown_pct": db.latest_cache[s["alias"]]["drawdown_pct"],
-                "profit":       db.latest_cache[s["alias"]]["profit"],
+        s_copy = dict(s)
+        if s_copy["alias"] in db.latest_cache:
+            s_copy.update({
+                "balance":      db.latest_cache[s_copy["alias"]]["balance"],
+                "equity":       db.latest_cache[s_copy["alias"]]["equity"],
+                "drawdown_pct": db.latest_cache[s_copy["alias"]]["drawdown_pct"],
+                "profit":       db.latest_cache[s_copy["alias"]]["profit"],
             })
-    return summary
+        result.append(s_copy)
+    return result

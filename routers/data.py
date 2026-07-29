@@ -37,16 +37,16 @@ async def receive_data(payload: MT5DataPayload):
                 INSERT INTO snapshots
                     (alias, account_number, balance, equity, margin, free_margin, margin_level,
                      profit, credit, initial_balance, drawdown_amount, drawdown_pct, equity_dd_pct,
-                     open_orders, buy_orders, sell_orders, total_lots, buy_lots, sell_lots, ts)
+                     open_orders, buy_orders, sell_orders, total_lots, buy_lots, sell_lots, withdrawal, ts)
                 VALUES
-                    ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+                    ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
             """,
                 payload.alias, payload.account_number,
                 payload.balance, payload.equity, payload.margin, payload.free_margin,
                 payload.margin_level, payload.profit, payload.credit, payload.initial_balance,
                 payload.drawdown_amount, payload.drawdown_pct, payload.equity_drawdown_pct,
                 payload.open_orders, payload.buy_orders, payload.sell_orders, payload.total_lots,
-                payload.buy_lots, payload.sell_lots, ts
+                payload.buy_lots, payload.sell_lots, payload.withdrawal, ts
             )
 
             # ลบข้อมูลเก่าเกิน MAX_HISTORY ต่อ account
@@ -90,6 +90,7 @@ async def receive_data(payload: MT5DataPayload):
         "total_lots":      payload.total_lots,
         "buy_lots":        payload.buy_lots,
         "sell_lots":       payload.sell_lots,
+        "withdrawal":      payload.withdrawal,
         "timestamp":       ts,
         "received_at":     datetime.now(db.TZ_BANGKOK).strftime('%Y-%m-%dT%H:%M:%S'),
         "active":          active,

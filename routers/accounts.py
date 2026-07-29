@@ -13,48 +13,75 @@ async def get_accounts():
 
 from datetime import datetime, timedelta
 
+last_bals_update = None
+cached_historical = {}
+
 @router.get("/api/latest")
 async def get_latest():
-    """ข้อมูลล่าสุดของทุก account สำหรับ overview"""
-    async with db.pool.acquire() as conn:
-        acc_rows = await conn.fetch("SELECT alias, active, display_name, initial_balance FROM accounts")
-        acc_map = {r["alias"]: dict(r) for r in acc_rows}
-
-        now = datetime.now(db.TZ_BANGKOK)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%dT%H:%M:%S')
-        monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-        week_start = monday.strftime('%Y-%m-%dT%H:%M:%S')
-
-        bals_map = {}
-        for alias in db.latest_cache.keys():
-            row_today = await conn.fetchrow("SELECT balance FROM snapshots WHERE alias=$1 AND ts < $2 ORDER BY ts DESC LIMIT 1", alias, today_start)
-            row_week = await conn.fetchrow("SELECT balance FROM snapshots WHERE alias=$1 AND ts < $2 ORDER BY ts DESC LIMIT 1", alias, week_start)
-            if not row_today:
-                row_today = await conn.fetchrow("SELECT balance FROM snapshots WHERE alias=$1 ORDER BY ts ASC LIMIT 1", alias)
-            if not row_week:
-                row_week = await conn.fetchrow("SELECT balance FROM snapshots WHERE alias=$1 ORDER BY ts ASC LIMIT 1", alias)
-            bals_map[alias] = (row_today["balance"] if row_today else None, row_week["balance"] if row_week else None)
-
+    """ข้อมูลล่าสุดของทุก account สำหรับ overview (Fast)"""
     result = []
     for alias, data in db.latest_cache.items():
-        acc_info   = acc_map.get(alias, {})
-        active     = acc_info.get("active", 1)
-        display_name = acc_info.get("display_name", "") or alias
-        initial_balance = acc_info.get("initial_balance", data.get("initial_balance", 0))
-
-        bt, bw = bals_map.get(alias, (None, None))
-        bal_today = bt if bt is not None else initial_balance
-        bal_week = bw if bw is not None else initial_balance
-        
-        current_bal = data.get("balance", 0)
-        
         entry = dict(data)
-        entry["active"]       = active
-        entry["display_name"] = display_name
-        entry["realized_today"] = current_bal - bal_today
-        entry["realized_week"] = current_bal - bal_week
-        entry["realized_all"] = current_bal - initial_balance
+        # ไม่คำนวณ realized เพื่อให้ response เร็วที่สุด frontend จะดึงแยกทีหลัง
+        entry["realized_today"] = None
+        entry["realized_week"] = None
+        entry["realized_all"] = None
         result.append(entry)
+    return result
+
+@router.get("/api/stats/realized")
+async def get_stats_realized():
+    """คำนวณกำไร realized แบบ asynchronous"""
+    global last_bals_update, cached_historical
+    now = datetime.now(db.TZ_BANGKOK)
+    
+    if last_bals_update is None or (now - last_bals_update).total_seconds() > 300:
+        async with db.pool.acquire() as conn:
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%dT%H:%M:%S')
+            monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+            week_start = monday.strftime('%Y-%m-%dT%H:%M:%S')
+            
+            new_cache = {}
+            for alias in db.latest_cache.keys():
+                row_today = await conn.fetchrow("SELECT balance, withdrawal FROM snapshots WHERE alias=$1 AND ts < $2 ORDER BY ts DESC LIMIT 1", alias, today_start)
+                row_week = await conn.fetchrow("SELECT balance, withdrawal FROM snapshots WHERE alias=$1 AND ts < $2 ORDER BY ts DESC LIMIT 1", alias, week_start)
+                if not row_today:
+                    row_today = await conn.fetchrow("SELECT balance, withdrawal FROM snapshots WHERE alias=$1 ORDER BY ts ASC LIMIT 1", alias)
+                if not row_week:
+                    row_week = await conn.fetchrow("SELECT balance, withdrawal FROM snapshots WHERE alias=$1 ORDER BY ts ASC LIMIT 1", alias)
+                
+                new_cache[alias] = {
+                    "bt": row_today["balance"] if row_today else None,
+                    "wt": row_today["withdrawal"] if row_today else None,
+                    "bw": row_week["balance"] if row_week else None,
+                    "ww": row_week["withdrawal"] if row_week else None,
+                }
+            cached_historical = new_cache
+            last_bals_update = now
+            
+    result = {}
+    for alias, data in db.latest_cache.items():
+        hist = cached_historical.get(alias, {})
+        initial_balance = data.get("initial_balance", 0)
+        
+        bt = hist.get("bt")
+        wt = hist.get("wt")
+        bw = hist.get("bw")
+        ww = hist.get("ww")
+        
+        if bt is None: bt = initial_balance
+        if wt is None: wt = 0.0
+        if bw is None: bw = initial_balance
+        if ww is None: ww = 0.0
+        
+        current_bal = data.get("balance", 0.0)
+        current_withdrawal = data.get("withdrawal", 0.0)
+        
+        result[alias] = {
+            "realized_today": (current_bal + current_withdrawal) - (bt + wt),
+            "realized_week": (current_bal + current_withdrawal) - (bw + ww),
+            "realized_all": (current_bal + current_withdrawal) - initial_balance
+        }
     return result
 
 @router.get("/api/latest/{alias}")

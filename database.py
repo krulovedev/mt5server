@@ -67,6 +67,7 @@ async def init_db(conn: asyncpg.Connection):
             total_lots      DOUBLE PRECISION,
             buy_lots        DOUBLE PRECISION DEFAULT 0.0,
             sell_lots       DOUBLE PRECISION DEFAULT 0.0,
+            withdrawal      DOUBLE PRECISION DEFAULT 0.0,
             ts              TEXT NOT NULL,
             received_at     TIMESTAMPTZ DEFAULT NOW()
         )
@@ -78,6 +79,7 @@ async def init_db(conn: asyncpg.Connection):
         ("snapshots", "sell_orders", "INTEGER DEFAULT 0"),
         ("snapshots", "buy_lots",    "DOUBLE PRECISION DEFAULT 0.0"),
         ("snapshots", "sell_lots",   "DOUBLE PRECISION DEFAULT 0.0"),
+        ("snapshots", "withdrawal",  "DOUBLE PRECISION DEFAULT 0.0"),
         ("accounts",  "display_name","TEXT DEFAULT ''"),
     ]
     for table, col, col_def in migrations:
