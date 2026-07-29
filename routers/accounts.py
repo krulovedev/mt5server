@@ -29,7 +29,7 @@ async def get_latest():
         result.append(entry)
     return result
 
-@router.get("/api/stats/realized")
+@router.get("/api/realized-profits")
 async def get_stats_realized():
     """คำนวณกำไร realized แบบ asynchronous"""
     global last_bals_update, cached_historical

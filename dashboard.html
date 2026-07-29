@@ -675,7 +675,7 @@
       });
 
       // Load realized stats asynchronously
-      fetch(API+'/api/stats/realized').then(r=>r.json()).then(stats=>{
+      fetch(API+'/api/realized-profits').then(r=>r.json()).then(stats=>{
         for(let alias in stats){
           const s = stats[alias];
           const update = (id, val) => {
