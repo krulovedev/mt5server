@@ -21,7 +21,7 @@ async def get_history(
 
     allowed = {"balance","equity","margin","free_margin","margin_level","profit",
                "drawdown_amount","drawdown_pct","equity_dd_pct","open_orders",
-               "buy_orders","sell_orders","total_lots","buy_lots","sell_lots","ts"}
+               "buy_orders","sell_orders","total_lots","buy_lots","sell_lots","ts","withdrawal"}
     fields = [f for f in field.split(",") if f.strip() in allowed]
     if not fields:
         fields = ["balance","equity","drawdown_pct","profit","ts"]
@@ -46,7 +46,7 @@ async def get_history_all(
     """ดึงข้อมูลทั้งหมดตั้งแต่ต้น (all-time chart)"""
     allowed = {"balance","equity","margin","free_margin","margin_level","profit",
                "drawdown_amount","drawdown_pct","equity_dd_pct","open_orders",
-               "buy_orders","sell_orders","total_lots","buy_lots","sell_lots","ts"}
+               "buy_orders","sell_orders","total_lots","buy_lots","sell_lots","ts","withdrawal"}
     fields = [f for f in field.split(",") if f.strip() in allowed]
     if not fields:
         fields = ["balance","equity","drawdown_pct","profit","ts"]

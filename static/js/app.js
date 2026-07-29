@@ -4,6 +4,7 @@ const API = '';
     let charts = {};
     let refreshTimer = 30;
     let countdownInterval;
+    let latestAccountsCache = {}; // เก็บข้อมูล latest แต่ละ account
 
     const $ = id => document.getElementById(id);
     const fmt = (n, d=2) => n==null?'—':(+n).toFixed(d);
@@ -143,6 +144,7 @@ const API = '';
         grid.innerHTML='';
         accounts.sort((a,b)=>(a.display_name||a.alias).localeCompare(b.display_name||b.alias));
         accounts.forEach(acc=>{
+          latestAccountsCache[acc.alias] = acc; // cache ข้อมูลล่าสุด
           const dd=acc.drawdown_pct||0;
           const eDD=acc.equity_dd_pct||0;
           const ddColor_=ddColor(dd);
@@ -163,6 +165,7 @@ const API = '';
         <div class="metrics-grid">
           <div class="metric"><div class="metric-label">Balance</div><div class="metric-value">${fmt(acc.balance)} <span style="font-size:10px;color:var(--muted)">${acc.currency||'USD'}</span></div></div>
           <div class="metric"><div class="metric-label">Equity</div><div class="metric-value">${fmt(acc.equity)}</div></div>
+          <div class="metric"><div class="metric-label">Withdrawal</div><div class="metric-value" style="color:var(--yellow)">${fmt(acc.withdrawal||0)}</div></div>
           
           <div class="metric"><div class="metric-label">Profit Today</div><div class="metric-value" id="rt-${acc.alias}">${acc.realized_today==null?'...':fmtN(acc.realized_today)}</div></div>
           <div class="metric"><div class="metric-label">Profit This Week</div><div class="metric-value" id="rw-${acc.alias}">${acc.realized_week==null?'...':fmtN(acc.realized_week)}</div></div>
@@ -250,7 +253,7 @@ const API = '';
         // ALL-TIME
         try {
           const [hRes,sRes,aRes]=await Promise.all([
-            fetch(`${API}/api/history_all/${selectedAlias}?limit=2000&field=balance,equity,drawdown_pct,profit,open_orders,total_lots,ts`),
+            fetch(`${API}/api/history_all/${selectedAlias}?limit=2000&field=balance,equity,drawdown_pct,profit,open_orders,total_lots,ts,withdrawal`),
             fetch(`${API}/api/stats/${selectedAlias}?days=3650`),
             fetch(`${API}/api/alltime/${selectedAlias}`)
           ]);
@@ -266,7 +269,7 @@ const API = '';
         const endISO=toBangkokISO(endNow);
         try {
           const [hRes,sRes,aRes]=await Promise.all([
-            fetch(`${API}/api/history/${selectedAlias}?start=${startISO}&end=${endISO}&limit=2000&field=balance,equity,drawdown_pct,profit,open_orders,total_lots,ts`),
+            fetch(`${API}/api/history/${selectedAlias}?start=${startISO}&end=${endISO}&limit=2000&field=balance,equity,drawdown_pct,profit,open_orders,total_lots,ts,withdrawal`),
             fetch(`${API}/api/stats/${selectedAlias}?days=${Math.max(1,Math.ceil(hrs/24))}`),
             fetch(`${API}/api/alltime/${selectedAlias}`)
           ]);
@@ -294,6 +297,7 @@ const API = '';
         sb('Max Orders',stats.max_open_orders||0)+
         sb('Avg Margin Lv',fmt(stats.avg_margin_level)+'%')+
         sb('Snapshots',hist.count||0)+
+        sb('Total Withdrawal',fmt(latestAccountsCache[selectedAlias]?.withdrawal||0),'var(--yellow)')+
         sbAt('All-Time Max DD',fmt(at.max_drawdown_pct)+'%','var(--red)')+
         sbAt('All-Time Max Profit',fmtN(at.max_profit),'var(--green)')+
         sbAt('All-Time Min Profit',fmtN(at.min_profit),'var(--red)')+
@@ -340,6 +344,17 @@ const API = '';
         y:{...chartDefaults.scales.y,position:'left'},
         y1:{...chartDefaults.scales.y,position:'right',grid:{display:false}}
       }}});
+
+      // Withdrawal chart (ถ้ามีข้อมูล)
+      const withdrawalEl = $('chart-withdrawal');
+      const withdrawalBox = $('withdrawal-chart-box');
+      const hasWithdrawal = data.some(d=>d.withdrawal>0);
+      if(withdrawalBox) withdrawalBox.style.display = hasWithdrawal ? 'block' : 'none';
+      if(withdrawalEl && hasWithdrawal) {
+        makeChart('chart-withdrawal',{type:'line',data:{labels,datasets:[
+          {label:'Withdrawal',data:data.map(d=>d.withdrawal||0),borderColor:'#ffa726',backgroundColor:'rgba(255,167,38,.1)',fill:true,borderWidth:1.5,pointRadius:0,tension:.3}
+        ]},options:chartDefaults});
+      }
     }
 
     function setRange(hours,label,btn) {
@@ -359,7 +374,7 @@ const API = '';
       if(end&&end.length===16) end+=':59';
       const wrap=$('history-table-wrap');
       wrap.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted)">กำลังโหลด...</div>';
-      const res=await fetch(`${API}/api/history/${alias}?start=${start}&end=${end}&limit=${limit}&field=balance,equity,profit,drawdown_pct,equity_dd_pct,margin_level,open_orders,total_lots,buy_lots,sell_lots,ts`);
+      const res=await fetch(`${API}/api/history/${alias}?start=${start}&end=${end}&limit=${limit}&field=balance,equity,profit,drawdown_pct,equity_dd_pct,margin_level,open_orders,total_lots,buy_lots,sell_lots,ts,withdrawal`);
       const hist=await res.json();
       const data=(hist.data||[]).reverse();
       if(!data.length){wrap.innerHTML='<div class="empty"><p>ไม่มีข้อมูลในช่วงเวลานี้</p></div>';return;}
@@ -368,7 +383,7 @@ const API = '';
     <div class="data-table-wrap">
     <table>
       <thead><tr>
-        <th>เวลา (UTC+7)</th><th>Balance</th><th>Equity</th><th>Profit</th>
+        <th>เวลา (UTC+7)</th><th>Balance</th><th>Equity</th><th>Withdrawal</th><th>Profit</th>
         <th>DD%</th><th>Eq DD%</th><th>Margin Lv</th><th>Orders</th><th>Lots (Buy/Sell)</th>
       </tr></thead>
       <tbody>
@@ -376,6 +391,7 @@ const API = '';
           <td>${fmtDate(r.ts)}</td>
           <td>${fmt(r.balance)}</td>
           <td>${fmt(r.equity)}</td>
+          <td style="color:var(--yellow)">${fmt(r.withdrawal||0)}</td>
           <td style="color:${r.profit>=0?'var(--green)':'var(--red)'}">${fmtN(r.profit)}</td>
           <td style="color:${ddColor(r.drawdown_pct)}">${fmt(r.drawdown_pct,2)}%</td>
           <td>${fmt(r.equity_dd_pct,2)}%</td>
@@ -396,7 +412,7 @@ const API = '';
       let end=$('detail-end').value;
       if(start&&start.length===16) start+=':00';
       if(end&&end.length===16) end+=':59';
-      const res=await fetch(`${API}/api/history/${alias}?start=${start}&end=${end}&limit=2000&field=balance,equity,drawdown_pct,equity_dd_pct,profit,open_orders,buy_orders,sell_orders,total_lots,buy_lots,sell_lots,margin_level,free_margin,ts`);
+      const res=await fetch(`${API}/api/history/${alias}?start=${start}&end=${end}&limit=2000&field=balance,equity,drawdown_pct,equity_dd_pct,profit,open_orders,buy_orders,sell_orders,total_lots,buy_lots,sell_lots,margin_level,free_margin,ts,withdrawal`);
       const hist=await res.json();
       const data=hist.data||[];
       const wrap=$('detail-tab-content');
