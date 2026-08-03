@@ -43,11 +43,26 @@ async def get_stats_realized():
             
             new_cache = {}
             for alias in db.latest_cache.keys():
-                # Snapshot แรกสุดในฐานข้อมูล = baseline
+                current_w = db.latest_cache[alias].get("withdrawal", 0.0) or 0.0
+                
+                # Snapshot แรกสุดในฐานข้อมูล = baseline สำหรับ balance
                 row_first = await conn.fetchrow(
                     "SELECT balance, withdrawal FROM snapshots WHERE alias=$1 ORDER BY ts ASC LIMIT 1",
                     alias
                 )
+                
+                # หา withdrawal baseline ที่แท้จริง:
+                # ถ้า snapshot แรกมี withdrawal=0 แต่ปัจจุบัน withdrawal > 0
+                # แสดงว่า 0 เป็นค่า default จาก migration → ใช้ snapshot แรกที่มี withdrawal > 0 แทน
+                wf_value = row_first["withdrawal"] if row_first else None
+                if row_first and (wf_value is None or wf_value == 0) and current_w > 0:
+                    row_first_real_w = await conn.fetchrow(
+                        "SELECT withdrawal FROM snapshots WHERE alias=$1 AND withdrawal > 0 ORDER BY ts ASC LIMIT 1",
+                        alias
+                    )
+                    if row_first_real_w:
+                        wf_value = row_first_real_w["withdrawal"]
+                
                 # Snapshot ก่อนต้นวัน
                 row_today = await conn.fetchrow(
                     "SELECT balance, withdrawal FROM snapshots WHERE alias=$1 AND ts < $2 ORDER BY ts DESC LIMIT 1",
@@ -64,13 +79,22 @@ async def get_stats_realized():
                 if not row_week:
                     row_week = row_first
                 
+                # สำหรับ today/week withdrawal baseline ก็ต้องแก้เช่นกัน
+                wt_value = row_today["withdrawal"] if row_today else None
+                ww_value = row_week["withdrawal"]  if row_week else None
+                # ถ้า withdrawal=0 เป็น default จาก migration ให้ใช้ wf_value แทน (ค่าจริงแรกสุด)
+                if wt_value is not None and wt_value == 0 and current_w > 0 and wf_value:
+                    wt_value = wf_value
+                if ww_value is not None and ww_value == 0 and current_w > 0 and wf_value:
+                    ww_value = wf_value
+                
                 new_cache[alias] = {
                     "bf": row_first["balance"]    if row_first else None,
-                    "wf": row_first["withdrawal"] if row_first else None,
+                    "wf": wf_value,
                     "bt": row_today["balance"]    if row_today else None,
-                    "wt": row_today["withdrawal"] if row_today else None,
+                    "wt": wt_value,
                     "bw": row_week["balance"]     if row_week else None,
-                    "ww": row_week["withdrawal"]  if row_week else None,
+                    "ww": ww_value,
                 }
             cached_historical = new_cache
             last_bals_update = now
