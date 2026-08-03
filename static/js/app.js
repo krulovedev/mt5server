@@ -165,7 +165,7 @@ const API = '';
         <div class="metrics-grid">
           <div class="metric"><div class="metric-label">Balance</div><div class="metric-value">${fmt(acc.balance)} <span style="font-size:10px;color:var(--muted)">${acc.currency||'USD'}</span></div></div>
           <div class="metric"><div class="metric-label">Equity</div><div class="metric-value">${fmt(acc.equity)}</div></div>
-          <div class="metric"><div class="metric-label">Withdrawal</div><div class="metric-value" style="color:var(--yellow)">${fmt(acc.withdrawal||0)}</div></div>
+          <div class="metric"><div class="metric-label">Withdrawal (นับจากเริ่มบันทึก)</div><div class="metric-value" id="nw-${acc.alias}" style="color:var(--yellow)">...</div></div>
           
           <div class="metric"><div class="metric-label">Profit Today</div><div class="metric-value" id="rt-${acc.alias}">${acc.realized_today==null?'...':fmtN(acc.realized_today)}</div></div>
           <div class="metric"><div class="metric-label">Profit This Week</div><div class="metric-value" id="rw-${acc.alias}">${acc.realized_week==null?'...':fmtN(acc.realized_week)}</div></div>
@@ -199,16 +199,23 @@ const API = '';
       fetch(API+'/api/realized-profits').then(r=>r.json()).then(stats=>{
         for(let alias in stats){
           const s = stats[alias];
-          const update = (id, val) => {
+          // เก็บ net_withdrawal + baseline_withdrawal ลง cache เพื่อให้ chart/table ใช้ได้
+          if(latestAccountsCache[alias]) {
+            latestAccountsCache[alias].net_withdrawal = s.net_withdrawal;
+            latestAccountsCache[alias].baseline_withdrawal = s.baseline_withdrawal ?? 0;
+          }
+          const update = (id, val, isProfit=true) => {
             const el = document.getElementById(id+'-'+alias);
             if(el){
-              el.textContent = fmtN(val);
-              el.className = 'metric-value '+(val>=0?'positive':'negative');
+              el.textContent = isProfit ? fmtN(val) : fmt(val);
+              el.className = 'metric-value '+(isProfit ? (val>=0?'positive':'negative') : '');
+              if(!isProfit) el.style.color = 'var(--yellow)';
             }
           };
           update('rt', s.realized_today);
           update('rw', s.realized_week);
           update('ra', s.realized_all);
+          if(s.net_withdrawal != null) update('nw', s.net_withdrawal, false);
         }
       }).catch(e=>console.error('Failed to load realized stats',e));
 
@@ -297,7 +304,7 @@ const API = '';
         sb('Max Orders',stats.max_open_orders||0)+
         sb('Avg Margin Lv',fmt(stats.avg_margin_level)+'%')+
         sb('Snapshots',hist.count||0)+
-        sb('Total Withdrawal',fmt(latestAccountsCache[selectedAlias]?.withdrawal||0),'var(--yellow)')+
+        sb('Total Withdrawal',fmt(latestAccountsCache[selectedAlias]?.net_withdrawal??latestAccountsCache[selectedAlias]?.withdrawal??0),'var(--yellow)')+
         sbAt('All-Time Max DD',fmt(at.max_drawdown_pct)+'%','var(--red)')+
         sbAt('All-Time Max Profit',fmtN(at.max_profit),'var(--green)')+
         sbAt('All-Time Min Profit',fmtN(at.min_profit),'var(--red)')+
@@ -345,14 +352,16 @@ const API = '';
         y1:{...chartDefaults.scales.y,position:'right',grid:{display:false}}
       }}});
 
-      // Withdrawal chart (ถ้ามีข้อมูล)
+      // Withdrawal chart (ถ้ามีข้อมูล) — หักยอดก่อนเริ่มบันทึกออก
       const withdrawalEl = $('chart-withdrawal');
       const withdrawalBox = $('withdrawal-chart-box');
-      const hasWithdrawal = data.some(d=>d.withdrawal>0);
+      const wBaseline = latestAccountsCache[selectedAlias]?.baseline_withdrawal ?? 0;
+      const netWithdrawalData = data.map(d => Math.max(0, (d.withdrawal||0) - wBaseline));
+      const hasWithdrawal = netWithdrawalData.some(v => v > 0);
       if(withdrawalBox) withdrawalBox.style.display = hasWithdrawal ? 'block' : 'none';
       if(withdrawalEl && hasWithdrawal) {
         makeChart('chart-withdrawal',{type:'line',data:{labels,datasets:[
-          {label:'Withdrawal',data:data.map(d=>d.withdrawal||0),borderColor:'#ffa726',backgroundColor:'rgba(255,167,38,.1)',fill:true,borderWidth:1.5,pointRadius:0,tension:.3}
+          {label:'Withdrawal (นับจากเริ่มบันทึก)',data:netWithdrawalData,borderColor:'#ffa726',backgroundColor:'rgba(255,167,38,.1)',fill:true,borderWidth:1.5,pointRadius:0,tension:.3}
         ]},options:chartDefaults});
       }
     }
@@ -391,7 +400,7 @@ const API = '';
           <td>${fmtDate(r.ts)}</td>
           <td>${fmt(r.balance)}</td>
           <td>${fmt(r.equity)}</td>
-          <td style="color:var(--yellow)">${fmt(r.withdrawal||0)}</td>
+          <td style="color:var(--yellow)">${fmt(Math.max(0,(r.withdrawal||0) - (latestAccountsCache[alias]?.baseline_withdrawal??0)))}</td>
           <td style="color:${r.profit>=0?'var(--green)':'var(--red)'}">${fmtN(r.profit)}</td>
           <td style="color:${ddColor(r.drawdown_pct)}">${fmt(r.drawdown_pct,2)}%</td>
           <td>${fmt(r.equity_dd_pct,2)}%</td>

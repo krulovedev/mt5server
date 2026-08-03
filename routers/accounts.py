@@ -98,10 +98,13 @@ async def get_stats_realized():
         
         # สูตร: (balance_now + withdrawal_now) - (balance_past + withdrawal_past)
         # withdrawal ก่อนบันทึกหักกันเองในสมการ ได้ผลถูกต้องเสมอ
+        # net_withdrawal = ยอดถอนหลังจากเริ่มบันทึก (ตัดยอดก่อนหน้าออก)
         result[alias] = {
-            "realized_today": (current_bal + current_withdrawal) - (bt + wt),
-            "realized_week":  (current_bal + current_withdrawal) - (bw + ww),
-            "realized_all":   (current_bal + current_withdrawal) - (bf + wf),
+            "realized_today":  (current_bal + current_withdrawal) - (bt + wt),
+            "realized_week":   (current_bal + current_withdrawal) - (bw + ww),
+            "realized_all":    (current_bal + current_withdrawal) - (bf + wf),
+            "net_withdrawal":  current_withdrawal - wf,  # ถอนหลังจากเริ่มบันทึกเท่านั้น
+            "baseline_withdrawal": wf,  # ยอดถอนสะสม ณ snapshot แรก (ก่อนเริ่มบันทึก)
         }
     return result
 
