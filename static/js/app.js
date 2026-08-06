@@ -817,7 +817,10 @@ const API = '';
         if (dayDataMap[dateStr] && dayDataMap[dateStr].has_data && dayDataMap[dateStr].profit !== 0) {
           const profit = dayDataMap[dateStr].profit;
           const cls = profit > 0 ? 'pnl-pos' : 'pnl-neg';
-          valHtml = `<div class="day-val ${cls}">${profit > 0 ? '+' : ''}${fmt(profit)}</div>`;
+          const maxDd = dayDataMap[dateStr].max_dd || 0;
+          const maxLots = dayDataMap[dateStr].max_lots || 0;
+          valHtml = `<div class="day-val ${cls}">${profit > 0 ? '+' : ''}${fmt(profit)}</div>
+                     <div class="day-extra" style="opacity:0.6"><div style="color:${ddColor(maxDd)}">DD:${fmt(maxDd,1)}%</div><div>L:${fmt(maxLots,2)}</div></div>`;
         }
         
         cell.innerHTML = `
@@ -843,15 +846,19 @@ const API = '';
         
         if (dayData && dayData.has_data) {
           const profit = dayData.profit;
+          let profitHtml = '';
           if (profit > 0) {
             cellClass += ' profit-pos';
-            valHtml = `<div class="day-val">${profit > 0 ? '+' : ''}${fmt(profit)}</div>`;
+            profitHtml = `<div class="day-val">${profit > 0 ? '+' : ''}${fmt(profit)}</div>`;
           } else if (profit < 0) {
             cellClass += ' profit-neg';
-            valHtml = `<div class="day-val">${fmt(profit)}</div>`;
+            profitHtml = `<div class="day-val">${fmt(profit)}</div>`;
           } else {
-            valHtml = `<div class="day-val" style="color:var(--muted)">0.00</div>`;
+            profitHtml = `<div class="day-val" style="color:var(--muted)">0.00</div>`;
           }
+          const maxDd = dayData.max_dd || 0;
+          const maxLots = dayData.max_lots || 0;
+          valHtml = profitHtml + `<div class="day-extra"><div style="color:${ddColor(maxDd)}">DD:${fmt(maxDd,1)}%</div><div>L:${fmt(maxLots,2)}</div></div>`;
         } else {
           valHtml = `<div class="day-val" style="color:var(--muted); font-size:9px;">—</div>`;
         }
@@ -881,7 +888,10 @@ const API = '';
         if (dayDataMap[dateStr] && dayDataMap[dateStr].has_data && dayDataMap[dateStr].profit !== 0) {
           const profit = dayDataMap[dateStr].profit;
           const cls = profit > 0 ? 'pnl-pos' : 'pnl-neg';
-          valHtml = `<div class="day-val ${cls}">${profit > 0 ? '+' : ''}${fmt(profit)}</div>`;
+          const maxDd = dayDataMap[dateStr].max_dd || 0;
+          const maxLots = dayDataMap[dateStr].max_lots || 0;
+          valHtml = `<div class="day-val ${cls}">${profit > 0 ? '+' : ''}${fmt(profit)}</div>
+                     <div class="day-extra" style="opacity:0.6"><div style="color:${ddColor(maxDd)}">DD:${fmt(maxDd,1)}%</div><div>L:${fmt(maxLots,2)}</div></div>`;
         }
         
         cell.innerHTML = `
