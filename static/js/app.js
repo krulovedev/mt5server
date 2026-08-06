@@ -107,10 +107,12 @@ const API = '';
     }
     startCountdown();
 
-    window.onTabLoaded = function(name) {
+    window.onTabLoaded = async function(name) {
       if(name==='overview') loadOverview();
       if(name==='settings') loadSettings();
-      if(name==='detail'||name==='history'||name==='pnl') populateAccountSelects();
+      if(name==='detail'||name==='history'||name==='pnl') {
+        await populateAccountSelects();
+      }
       if(name==='pnl') loadPnlTab();
       if(name==='alerts') loadAlertsTab();
     };
