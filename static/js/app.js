@@ -818,9 +818,10 @@ const API = '';
           const profit = dayDataMap[dateStr].profit;
           const cls = profit > 0 ? 'pnl-pos' : 'pnl-neg';
           const maxDd = dayDataMap[dateStr].max_dd || 0;
+          const maxDdAmt = dayDataMap[dateStr].max_dd_amt || 0;
           const maxLots = dayDataMap[dateStr].max_lots || 0;
           valHtml = `<div class="day-val ${cls}">${profit > 0 ? '+' : ''}${fmt(profit)}</div>
-                     <div class="day-extra" style="opacity:0.6"><div style="color:${ddColor(maxDd)}">DD:${fmt(maxDd,1)}%</div><div>L:${fmt(maxLots,2)}</div></div>`;
+                     <div class="day-extra" style="opacity:0.6"><div style="color:${ddColor(maxDd)}">DD: ${fmt(maxDdAmt)} (${fmt(maxDd,1)}%)</div><div>L: ${fmt(maxLots,2)}</div></div>`;
         }
         
         cell.innerHTML = `
@@ -857,8 +858,9 @@ const API = '';
             profitHtml = `<div class="day-val" style="color:var(--muted)">0.00</div>`;
           }
           const maxDd = dayData.max_dd || 0;
+          const maxDdAmt = dayData.max_dd_amt || 0;
           const maxLots = dayData.max_lots || 0;
-          valHtml = profitHtml + `<div class="day-extra"><div style="color:${ddColor(maxDd)}">DD:${fmt(maxDd,1)}%</div><div>L:${fmt(maxLots,2)}</div></div>`;
+          valHtml = profitHtml + `<div class="day-extra"><div style="color:${ddColor(maxDd)}">DD: ${fmt(maxDdAmt)} (${fmt(maxDd,1)}%)</div><div>L: ${fmt(maxLots,2)}</div></div>`;
         } else {
           valHtml = `<div class="day-val" style="color:var(--muted); font-size:9px;">—</div>`;
         }
@@ -889,9 +891,10 @@ const API = '';
           const profit = dayDataMap[dateStr].profit;
           const cls = profit > 0 ? 'pnl-pos' : 'pnl-neg';
           const maxDd = dayDataMap[dateStr].max_dd || 0;
+          const maxDdAmt = dayDataMap[dateStr].max_dd_amt || 0;
           const maxLots = dayDataMap[dateStr].max_lots || 0;
           valHtml = `<div class="day-val ${cls}">${profit > 0 ? '+' : ''}${fmt(profit)}</div>
-                     <div class="day-extra" style="opacity:0.6"><div style="color:${ddColor(maxDd)}">DD:${fmt(maxDd,1)}%</div><div>L:${fmt(maxLots,2)}</div></div>`;
+                     <div class="day-extra" style="opacity:0.6"><div style="color:${ddColor(maxDd)}">DD: ${fmt(maxDdAmt)} (${fmt(maxDd,1)}%)</div><div>L: ${fmt(maxLots,2)}</div></div>`;
         }
         
         cell.innerHTML = `
