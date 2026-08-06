@@ -18,11 +18,12 @@
 
   <div class="container">
     <div class="tabs">
-      <button class="tab-btn active" onclick="switchTab('overview', this)">ภาพรวม</button>
-      <button class="tab-btn" onclick="switchTab('detail', this)">วิเคราะห์กราฟ</button>
-      <button class="tab-btn" onclick="switchTab('history', this)">ประวัติข้อมูล</button>
+      <button class="tab-btn active" onclick="switchTab('overview', this)">📊 ภาพรวม</button>
+      <button class="tab-btn" onclick="switchTab('detail', this)">📈 วิเคราะห์กราฟ</button>
+      <button class="tab-btn" onclick="switchTab('history', this)">📜 ประวัติข้อมูล</button>
+      <button class="tab-btn" onclick="switchTab('pnl', this)">💰 ผลกำไร ขาดทุน</button>
       <button class="tab-btn" onclick="switchTab('alerts', this)">🔔 แจ้งเตือน</button>
-      <button class="tab-btn" onclick="switchTab('settings', this)">ตั้งค่า</button>
+      <button class="tab-btn" onclick="switchTab('settings', this)">⚙️ ตั้งค่า</button>
     </div>
     
     <div id="tab-content-container">
@@ -53,6 +54,7 @@
             // Fallback just in case
             if (tabId === 'overview' && typeof loadOverview === 'function') loadOverview();
             if ((tabId === 'detail' || tabId === 'history') && typeof populateAccountSelects === 'function') populateAccountSelects();
+            if (tabId === 'pnl' && typeof loadPnlTab === 'function') loadPnlTab();
             if (tabId === 'alerts' && typeof loadAlertsTab === 'function') loadAlertsTab();
             if (tabId === 'settings' && typeof loadSettings === 'function') loadSettings();
         }

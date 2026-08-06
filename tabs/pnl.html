@@ -1,0 +1,94 @@
+<div class="pnl-header-controls">
+  <div class="pnl-control-group">
+    <select id="pnl-account-sel" onchange="loadPnlTab(true)">
+      <option value="">-- เลือก Account --</option>
+    </select>
+    
+    <div class="pnl-year-wrapper">
+      <select id="pnl-year-sel" onchange="loadPnlTab(true)">
+        <!-- Will be populated dynamically, e.g. 2024, 2025, 2026, 2027 -->
+      </select>
+    </div>
+  </div>
+
+  <div class="pnl-month-navigator">
+    <button class="btn secondary" onclick="changeMonth(-1)">◀ เดือนก่อนหน้า</button>
+    <div class="pnl-current-month-display" id="pnl-month-display">สิงหาคม 2026</div>
+    <button class="btn secondary" onclick="changeMonth(1)">เดือนถัดไป ▶</button>
+  </div>
+</div>
+
+<!-- Calendar Display Grid -->
+<div class="pnl-card calendar-card">
+  <div class="pnl-calendar-header">
+    <div>อา.</div>
+    <div>จ.</div>
+    <div>อ.</div>
+    <div>พ.</div>
+    <div>พฤ.</div>
+    <div>ศ.</div>
+    <div>ส.</div>
+  </div>
+  <div class="pnl-calendar-grid" id="pnl-calendar-grid">
+    <!-- Day cells will be rendered here dynamically -->
+  </div>
+</div>
+
+<!-- Monthly Summary Cards -->
+<h3 class="pnl-section-title">📊 สรุปผลรายเดือน (<span id="pnl-stats-month-name">—</span>)</h3>
+<div class="pnl-stats-grid">
+  <div class="stat-box">
+    <div class="label">กำไร / ขาดทุนสุทธิ</div>
+    <div class="val" id="pnl-stat-net-profit">—</div>
+  </div>
+  <div class="stat-box">
+    <div class="label">ยอดถอนเงินรวม</div>
+    <div class="val" id="pnl-stat-withdrawals">—</div>
+  </div>
+  <div class="stat-box">
+    <div class="label">อัตราการชนะ (Win Rate)</div>
+    <div class="val" id="pnl-stat-winrate">—</div>
+  </div>
+  <div class="stat-box">
+    <div class="label">กำไรเฉลี่ยต่อวัน</div>
+    <div class="val" id="pnl-stat-avg-profit">—</div>
+  </div>
+  <div class="stat-box">
+    <div class="label">วันที่กำไรสูงสุด</div>
+    <div class="val" id="pnl-stat-best-day" style="color:var(--green)">—</div>
+  </div>
+  <div class="stat-box">
+    <div class="label">วันที่ขาดทุนสูงสุด</div>
+    <div class="val" id="pnl-stat-worst-day" style="color:var(--red)">—</div>
+  </div>
+</div>
+
+<!-- Annual Breakdown Table -->
+<h3 class="pnl-section-title">📅 สรุปผลรายปี (<span id="pnl-stats-year-val">—</span>)</h3>
+<div class="pnl-card table-card">
+  <div class="data-table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="text-align:left">เดือน</th>
+          <th>จำนวนวันที่เทรด (มีข้อมูล)</th>
+          <th>วันชนะ / แพ้</th>
+          <th>ถอนเงิน</th>
+          <th>กำไร / ขาดทุนสุทธิ</th>
+        </tr>
+      </thead>
+      <tbody id="pnl-yearly-table-body">
+        <!-- Monthly summary rows will be rendered here -->
+      </tbody>
+      <tfoot>
+        <tr style="font-weight:700; background:var(--bg3);">
+          <td style="text-align:left; color:var(--text)">รวมทั้งหมด (ทั้งปี)</td>
+          <td id="pnl-total-days">—</td>
+          <td id="pnl-total-winloss">—</td>
+          <td id="pnl-total-withdrawal" style="color:var(--yellow); text-align:right">—</td>
+          <td id="pnl-total-profit" style="text-align:right">—</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>

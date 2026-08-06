@@ -110,7 +110,8 @@ const API = '';
     window.onTabLoaded = function(name) {
       if(name==='overview') loadOverview();
       if(name==='settings') loadSettings();
-      if(name==='detail'||name==='history') populateAccountSelects();
+      if(name==='detail'||name==='history'||name==='pnl') populateAccountSelects();
+      if(name==='pnl') loadPnlTab();
       if(name==='alerts') loadAlertsTab();
     };
 
@@ -539,10 +540,10 @@ const API = '';
       const res=await fetch(API+'/api/accounts');
       const accounts=await res.json();
       const opts=accounts.map(a=>`<option value="${a.alias}">${a.display_name||a.alias}</option>`).join('');
-      ['detail-account-sel','hist-account-sel'].forEach(id=>{
+      ['detail-account-sel','hist-account-sel','pnl-account-sel'].forEach(id=>{
         const sel=$(id);
         if(sel){
-          const curr=sel.value;
+          const curr=sel.value || (id === 'pnl-account-sel' ? selectedAlias : '');
           sel.innerHTML='<option value="">-- เลือก Account --</option>'+opts;
           if(curr) sel.value=curr;
         }
@@ -681,6 +682,364 @@ const API = '';
       if(selectedAlias===alias){selectedAlias=null;$('detail-panel').style.display='none';}
       showToast('✓ ลบ Account แล้ว','var(--red)');
       loadOverview();loadSettings();
+    }
+
+    // === PNL CALENDAR TAB ===
+    let pnlYearlyCache = null; // Cache for the selected year's data
+    let pnlSelectedYear = new Date().getFullYear();
+    let pnlSelectedMonth = new Date().getMonth(); // 0-11
+    let pnlSelectedAlias = "";
+
+    async function loadPnlTab(forceRefresh = false) {
+      const select = $('pnl-account-sel');
+      if (!select) return;
+      
+      const alias = select.value;
+      if (!alias) {
+        $('pnl-calendar-grid').innerHTML = '<div class="empty" style="grid-column: 1/-1;"><p>กรุณาเลือก Account เพื่อดูข้อมูลกำไร/ขาดทุน</p></div>';
+        $('pnl-yearly-table-body').innerHTML = '<tr><td colspan="5" class="empty" style="text-align:center">กรุณาเลือก Account</td></tr>';
+        $('pnl-stats-month-name').textContent = '—';
+        $('pnl-stat-net-profit').textContent = '—';
+        $('pnl-stat-withdrawals').textContent = '—';
+        $('pnl-stat-winrate').textContent = '—';
+        $('pnl-stat-avg-profit').textContent = '—';
+        $('pnl-stat-best-day').textContent = '—';
+        $('pnl-stat-worst-day').textContent = '—';
+        $('pnl-stats-year-val').textContent = '—';
+        return;
+      }
+      
+      // Populate Year Select if empty
+      const yearSelect = $('pnl-year-sel');
+      if (yearSelect && yearSelect.options.length === 0) {
+        const currYear = new Date().getFullYear();
+        let yearOpts = "";
+        for (let y = currYear - 3; y <= currYear + 1; y++) {
+          yearOpts += `<option value="${y}" ${y === currYear ? 'selected' : ''}>${y}</option>`;
+        }
+        yearSelect.innerHTML = yearOpts;
+        pnlSelectedYear = currYear;
+      }
+      
+      const year = parseInt(yearSelect.value) || new Date().getFullYear();
+      
+      // If year or alias changed, or force refresh
+      if (forceRefresh || pnlSelectedAlias !== alias || pnlSelectedYear !== year || !pnlYearlyCache) {
+        pnlSelectedAlias = alias;
+        pnlSelectedYear = year;
+        
+        // Render spinner
+        $('pnl-calendar-grid').innerHTML = '<div class="empty" style="grid-column: 1/-1;"><div class="spinner"></div><p>กำลังโหลดข้อมูล...</p></div>';
+        
+        try {
+          const res = await fetch(`${API}/api/pnl/calendar/${alias}?year=${year}`);
+          pnlYearlyCache = await res.json();
+        } catch (e) {
+          console.error(e);
+          $('pnl-calendar-grid').innerHTML = '<div class="empty" style="grid-column: 1/-1;"><p style="color:var(--red)">เกิดข้อผิดพลาดในการโหลดข้อมูล</p></div>';
+          return;
+        }
+      }
+      
+      renderPnlCalendar();
+      calculatePnlStats();
+    }
+
+    function changeMonth(dir) {
+      pnlSelectedMonth += dir;
+      if (pnlSelectedMonth < 0) {
+        pnlSelectedMonth = 11;
+        pnlSelectedYear--;
+        const yearSelect = $('pnl-year-sel');
+        if (yearSelect) {
+          yearSelect.value = pnlSelectedYear;
+        }
+        loadPnlTab(true); // Need to fetch new year data
+        return;
+      } else if (pnlSelectedMonth > 11) {
+        pnlSelectedMonth = 0;
+        pnlSelectedYear++;
+        const yearSelect = $('pnl-year-sel');
+        if (yearSelect) {
+          yearSelect.value = pnlSelectedYear;
+        }
+        loadPnlTab(true); // Need to fetch new year data
+        return;
+      }
+      
+      renderPnlCalendar();
+      calculatePnlStats();
+    }
+
+    function renderPnlCalendar() {
+      const grid = $('pnl-calendar-grid');
+      if (!grid || !pnlYearlyCache || !pnlYearlyCache.days) return;
+      
+      const monthNames = [
+        "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+        "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+      ];
+      
+      $('pnl-month-display').textContent = `${monthNames[pnlSelectedMonth]} ${pnlSelectedYear}`;
+      $('pnl-stats-month-name').textContent = monthNames[pnlSelectedMonth];
+      $('pnl-stats-year-val').textContent = pnlSelectedYear;
+      
+      grid.innerHTML = '';
+      
+      // Calculate first day of the month and total days
+      const firstDayIdx = new Date(pnlSelectedYear, pnlSelectedMonth, 1).getDay(); // 0 (Sun) to 6 (Sat)
+      const totalDays = new Date(pnlSelectedYear, pnlSelectedMonth + 1, 0).getDate();
+      
+      // Get previous month's trailing days
+      const prevMonthTotalDays = new Date(pnlSelectedYear, pnlSelectedMonth, 0).getDate();
+      
+      // Create a lookup map for profit/loss by date string (YYYY-MM-DD)
+      const dayDataMap = {};
+      pnlYearlyCache.days.forEach(d => {
+        dayDataMap[d.date] = d;
+      });
+      
+      const todayStr = toBangkokLocalDateString(new Date());
+
+      // 1. Render prev month padding days
+      for (let i = firstDayIdx - 1; i >= 0; i--) {
+        const dayNum = prevMonthTotalDays - i;
+        const tempDate = new Date(pnlSelectedYear, pnlSelectedMonth - 1, dayNum);
+        const dateStr = toBangkokLocalDateString(tempDate);
+        const isWeekend = tempDate.getDay() === 0 || tempDate.getDay() === 6;
+        
+        const cell = document.createElement('div');
+        cell.className = `pnl-day-cell other-month${isWeekend ? ' weekend' : ''}`;
+        
+        let valHtml = '';
+        if (dayDataMap[dateStr] && dayDataMap[dateStr].has_data && dayDataMap[dateStr].profit !== 0) {
+          const profit = dayDataMap[dateStr].profit;
+          const cls = profit > 0 ? 'pnl-pos' : 'pnl-neg';
+          valHtml = `<div class="day-val ${cls}">${profit > 0 ? '+' : ''}${fmt(profit)}</div>`;
+        }
+        
+        cell.innerHTML = `
+          <div class="day-num">${dayNum}</div>
+          ${valHtml}
+        `;
+        grid.appendChild(cell);
+      }
+      
+      // 2. Render current month days
+      for (let day = 1; day <= totalDays; day++) {
+        const tempDate = new Date(pnlSelectedYear, pnlSelectedMonth, day);
+        const dateStr = toBangkokLocalDateString(tempDate);
+        const isWeekend = tempDate.getDay() === 0 || tempDate.getDay() === 6;
+        
+        const cell = document.createElement('div');
+        let cellClass = 'pnl-day-cell';
+        if (isWeekend) cellClass += ' weekend';
+        if (dateStr === todayStr) cellClass += ' today';
+        
+        let valHtml = '';
+        const dayData = dayDataMap[dateStr];
+        
+        if (dayData && dayData.has_data) {
+          const profit = dayData.profit;
+          if (profit > 0) {
+            cellClass += ' profit-pos';
+            valHtml = `<div class="day-val">${profit > 0 ? '+' : ''}${fmt(profit)}</div>`;
+          } else if (profit < 0) {
+            cellClass += ' profit-neg';
+            valHtml = `<div class="day-val">${fmt(profit)}</div>`;
+          } else {
+            valHtml = `<div class="day-val" style="color:var(--muted)">0.00</div>`;
+          }
+        } else {
+          valHtml = `<div class="day-val" style="color:var(--muted); font-size:9px;">—</div>`;
+        }
+        
+        cell.className = cellClass;
+        cell.title = dayData ? `Balance: ${fmt(dayData.balance)}\nWithdrawal: ${fmt(dayData.withdrawal)}` : '';
+        cell.innerHTML = `
+          <div class="day-num">${day}</div>
+          ${valHtml}
+        `;
+        grid.appendChild(cell);
+      }
+      
+      // 3. Render next month padding days to fill the row (42 cells total for 6 rows)
+      const totalCellsRendered = firstDayIdx + totalDays;
+      const remainingCells = (7 - (totalCellsRendered % 7)) % 7;
+      
+      for (let day = 1; day <= remainingCells; day++) {
+        const tempDate = new Date(pnlSelectedYear, pnlSelectedMonth + 1, day);
+        const dateStr = toBangkokLocalDateString(tempDate);
+        const isWeekend = tempDate.getDay() === 0 || tempDate.getDay() === 6;
+        
+        const cell = document.createElement('div');
+        cell.className = `pnl-day-cell other-month${isWeekend ? ' weekend' : ''}`;
+        
+        let valHtml = '';
+        if (dayDataMap[dateStr] && dayDataMap[dateStr].has_data && dayDataMap[dateStr].profit !== 0) {
+          const profit = dayDataMap[dateStr].profit;
+          const cls = profit > 0 ? 'pnl-pos' : 'pnl-neg';
+          valHtml = `<div class="day-val ${cls}">${profit > 0 ? '+' : ''}${fmt(profit)}</div>`;
+        }
+        
+        cell.innerHTML = `
+          <div class="day-num">${day}</div>
+          ${valHtml}
+        `;
+        grid.appendChild(cell);
+      }
+    }
+
+    function toBangkokLocalDateString(dateObj) {
+      // Return YYYY-MM-DD in Bangkok timezone
+      const formatter = new Intl.DateTimeFormat('sv-SE', {
+        timeZone: 'Asia/Bangkok',
+        year: 'numeric', month: '2-digit', day: '2-digit'
+      });
+      return formatter.format(dateObj);
+    }
+
+    function calculatePnlStats() {
+      if (!pnlYearlyCache || !pnlYearlyCache.days) return;
+      
+      const monthNames = [
+        "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+        "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+      ];
+      
+      const sortedDays = [...pnlYearlyCache.days].sort((a,b)=>a.date.localeCompare(b.date));
+      
+      // Calculate daily withdrawal changes for the year
+      let lastW = pnlYearlyCache.baseline_withdrawal || 0;
+      sortedDays.forEach(d => {
+        const change = d.withdrawal - lastW;
+        d.dailyWithdrawalChange = change > 0 ? change : 0;
+        lastW = d.withdrawal;
+      });
+      
+      // Month calculation
+      const targetMonthStr = String(pnlSelectedMonth + 1).padStart(2, '0');
+      const monthPrefix = `${pnlSelectedYear}-${targetMonthStr}`;
+      const monthlyDays = sortedDays.filter(d => d.date.startsWith(monthPrefix));
+      
+      let netProfit = 0.0;
+      let totalW = 0.0;
+      let winDays = 0;
+      let lossDays = 0;
+      let tradingDays = 0;
+      let bestProfit = -Infinity;
+      let bestDate = "—";
+      let worstProfit = Infinity;
+      let worstDate = "—";
+      
+      monthlyDays.forEach(d => {
+        if (d.has_data) {
+          tradingDays++;
+          netProfit += d.profit;
+          totalW += d.dailyWithdrawalChange;
+          
+          if (d.profit > 0) {
+            winDays++;
+            if (d.profit > bestProfit) {
+              bestProfit = d.profit;
+              bestDate = d.date;
+            }
+          } else if (d.profit < 0) {
+            lossDays++;
+            if (d.profit < worstProfit) {
+              worstProfit = d.profit;
+              worstDate = d.date;
+            }
+          }
+        }
+      });
+      
+      // Render monthly stats
+      const netProfitEl = $('pnl-stat-net-profit');
+      netProfitEl.textContent = fmt(netProfit);
+      netProfitEl.className = 'val ' + (netProfit > 0 ? 'pnl-pos' : netProfit < 0 ? 'pnl-neg' : '');
+      
+      $('pnl-stat-withdrawals').textContent = fmt(totalW);
+      
+      const winRate = tradingDays > 0 ? ((winDays / tradingDays) * 100).toFixed(1) + '%' : '0.0%';
+      $('pnl-stat-winrate').textContent = `${winRate} (${winDays} วันชนะ / ${lossDays} วันแพ้)`;
+      
+      const avgProfit = tradingDays > 0 ? netProfit / tradingDays : 0;
+      const avgProfitEl = $('pnl-stat-avg-profit');
+      avgProfitEl.textContent = fmt(avgProfit);
+      avgProfitEl.className = 'val ' + (avgProfit > 0 ? 'pnl-pos' : avgProfit < 0 ? 'pnl-neg' : '');
+      
+      $('pnl-stat-best-day').textContent = bestProfit > -Infinity ? (bestProfit > 0 ? '+' : '') + fmt(bestProfit) + ` (${bestDate.substring(8, 10)})` : '—';
+      $('pnl-stat-worst-day').textContent = worstProfit < Infinity ? fmt(worstProfit) + ` (${worstDate.substring(8, 10)})` : '—';
+      
+      // 2. Render Annual Summary Table
+      let yearlyTableHtml = '';
+      let yTotalTradingDays = 0;
+      let yTotalWinDays = 0;
+      let yTotalLossDays = 0;
+      let yTotalW = 0.0;
+      let yTotalProfit = 0.0;
+      
+      for (let m = 0; m < 12; m++) {
+        const mPrefix = `${pnlSelectedYear}-${String(m + 1).padStart(2, '0')}`;
+        const mDays = sortedDays.filter(d => d.date.startsWith(mPrefix));
+        
+        let mProfit = 0.0;
+        let mW = 0.0;
+        let mWin = 0;
+        let mLoss = 0;
+        let mTrading = 0;
+        
+        mDays.forEach(d => {
+          if (d.has_data) {
+            mTrading++;
+            mProfit += d.profit;
+            mW += d.dailyWithdrawalChange;
+            if (d.profit > 0) mWin++;
+            else if (d.profit < 0) mLoss++;
+          }
+        });
+        
+        // Sum annuals
+        yTotalTradingDays += mTrading;
+        yTotalWinDays += mWin;
+        yTotalLossDays += mLoss;
+        yTotalW += mW;
+        yTotalProfit += mProfit;
+        
+        const isCurrentMonth = m === pnlSelectedMonth;
+        const rowStyle = isCurrentMonth ? 'style="background: rgba(0, 212, 255, 0.08); font-weight: 600;"' : '';
+        
+        const profitCls = mProfit > 0 ? 'pnl-pos' : mProfit < 0 ? 'pnl-neg' : '';
+        yearlyTableHtml += `
+          <tr ${rowStyle} onclick="selectMonth(${m})" style="cursor:pointer">
+            <td style="text-align:left; color:var(--text)">${monthNames[m]} ${isCurrentMonth ? '📌' : ''}</td>
+            <td>${mTrading} วัน</td>
+            <td><span class="pnl-pos">${mWin}</span> / <span class="pnl-neg">${mLoss}</span></td>
+            <td style="color:${mW > 0 ? 'var(--yellow)' : 'var(--muted)'}">${fmt(mW)}</td>
+            <td class="${profitCls}" style="font-weight:600">${mProfit > 0 ? '+' : ''}${fmt(mProfit)}</td>
+          </tr>
+        `;
+      }
+      
+      $('pnl-yearly-table-body').innerHTML = yearlyTableHtml;
+      
+      // Footer annual summaries
+      $('pnl-total-days').textContent = `${yTotalTradingDays} วัน`;
+      $('pnl-total-winloss').innerHTML = `<span class="pnl-pos">${yTotalWinDays}</span> / <span class="pnl-neg">${yTotalLossDays}</span>`;
+      $('pnl-total-withdrawal').textContent = fmt(yTotalW);
+      
+      const yProfitEl = $('pnl-total-profit');
+      yProfitEl.textContent = (yTotalProfit > 0 ? '+' : '') + fmt(yTotalProfit);
+      yProfitEl.className = yTotalProfit > 0 ? 'pnl-pos' : yTotalProfit < 0 ? 'pnl-neg' : '';
+    }
+
+    function selectMonth(mIndex) {
+      pnlSelectedMonth = mIndex;
+      renderPnlCalendar();
+      calculatePnlStats();
+      // Scroll smoothly to top of calendar
+      $('pnl-month-display').scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});

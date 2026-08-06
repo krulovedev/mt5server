@@ -165,3 +165,102 @@ async def get_alltime_all():
             })
         result.append(s_copy)
     return result
+
+@router.get("/api/pnl/calendar/{alias}")
+async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100)):
+    from datetime import date, timedelta
+    
+    async with db.pool.acquire() as conn:
+        # 1. First snapshot of this account for baseline
+        row_first = await conn.fetchrow(
+            "SELECT balance, withdrawal, ts FROM snapshots WHERE alias=$1 ORDER BY ts ASC LIMIT 1",
+            alias
+        )
+        if not row_first:
+            return {"alias": alias, "year": year, "days": []}
+            
+        # 2. Last snapshot before the year
+        row_prev = await conn.fetchrow(
+            "SELECT balance, withdrawal, ts FROM snapshots WHERE alias=$1 AND ts < $2 ORDER BY ts DESC LIMIT 1",
+            alias, f"{year}-01-01T00:00:00"
+        )
+        
+        # 3. Last snapshot of each day in the year
+        rows = await conn.fetch(
+            """
+            SELECT DISTINCT ON (SUBSTRING(ts, 1, 10))
+                SUBSTRING(ts, 1, 10) AS date_str,
+                balance,
+                withdrawal,
+                ts
+            FROM snapshots
+            WHERE alias = $1 AND ts >= $2 AND ts <= $3
+            ORDER BY SUBSTRING(ts, 1, 10) ASC, ts DESC
+            """,
+            alias, f"{year}-01-01T00:00:00", f"{year}-12-31T23:59:59"
+        )
+
+    # Initialize baselines
+    if row_prev:
+        prev_bal = row_prev["balance"]
+        prev_withdraw = row_prev["withdrawal"] or 0.0
+    else:
+        prev_bal = row_first["balance"]
+        prev_withdraw = row_first["withdrawal"] or 0.0
+
+    init_bal = prev_bal
+    init_withdraw = prev_withdraw
+
+    day_snapshots = {r["date_str"]: (r["balance"], r["withdrawal"] or 0.0) for r in rows}
+    
+    first_date_str = row_first["ts"][:10]
+    start_date = date(year, 1, 1)
+    end_date = date(year, 12, 31)
+    
+    days_data = []
+    curr = start_date
+    while curr <= end_date:
+        date_str = curr.strftime("%Y-%m-%d")
+        
+        if date_str < first_date_str:
+            days_data.append({
+                "date": date_str,
+                "profit": 0.0,
+                "balance": 0.0,
+                "withdrawal": 0.0,
+                "has_data": False
+            })
+        elif date_str in day_snapshots:
+            bal, withdraw = day_snapshots[date_str]
+            if prev_bal is not None:
+                profit = (bal + withdraw) - (prev_bal + prev_withdraw)
+            else:
+                profit = 0.0
+            prev_bal = bal
+            prev_withdraw = withdraw
+            days_data.append({
+                "date": date_str,
+                "profit": round(profit, 2),
+                "balance": round(bal, 2),
+                "withdrawal": round(withdraw, 2),
+                "has_data": True
+            })
+        else:
+            days_data.append({
+                "date": date_str,
+                "profit": 0.0,
+                "balance": round(prev_bal, 2) if prev_bal is not None else 0.0,
+                "withdrawal": round(prev_withdraw, 2),
+                "has_data": False
+            })
+            
+        curr += timedelta(days=1)
+        
+    return {
+        "alias": alias,
+        "year": year,
+        "baseline_balance": round(init_bal, 2) if init_bal is not None else 0.0,
+        "baseline_withdrawal": round(init_withdraw, 2),
+        "days": days_data
+    }
+
