@@ -206,6 +206,7 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
             SELECT 
                 SUBSTRING(ts, 1, 10) AS date_str,
                 MAX(drawdown_pct) as max_dd,
+                MAX(drawdown_amount) as max_dd_amt,
                 MAX(total_lots) as max_lots
             FROM snapshots
             WHERE alias = $1 AND ts >= $2 AND ts <= $3
@@ -226,7 +227,7 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
     init_withdraw = prev_withdraw
 
     day_snapshots = {r["date_str"]: (r["balance"], r["withdrawal"] or 0.0) for r in rows}
-    day_aggs = {r["date_str"]: (r["max_dd"] or 0.0, r["max_lots"] or 0.0) for r in agg_rows}
+    day_aggs = {r["date_str"]: (r["max_dd"] or 0.0, r.get("max_dd_amt") or 0.0, r["max_lots"] or 0.0) for r in agg_rows}
     
     first_date_str = row_first["ts"][:10]
     start_date = date(year, 1, 1)
@@ -244,12 +245,13 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
                 "balance": 0.0,
                 "withdrawal": 0.0,
                 "max_dd": 0.0,
+                "max_dd_amt": 0.0,
                 "max_lots": 0.0,
                 "has_data": False
             })
         elif date_str in day_snapshots:
             bal, withdraw = day_snapshots[date_str]
-            max_dd, max_lots = day_aggs.get(date_str, (0.0, 0.0))
+            max_dd, max_dd_amt, max_lots = day_aggs.get(date_str, (0.0, 0.0, 0.0))
             if prev_bal is not None:
                 profit = (bal + withdraw) - (prev_bal + prev_withdraw)
             else:
@@ -262,6 +264,7 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
                 "balance": round(bal, 2),
                 "withdrawal": round(withdraw, 2),
                 "max_dd": round(max_dd, 2),
+                "max_dd_amt": round(max_dd_amt, 2),
                 "max_lots": round(max_lots, 2),
                 "has_data": True
             })
@@ -272,6 +275,7 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
                 "balance": round(prev_bal, 2) if prev_bal is not None else 0.0,
                 "withdrawal": round(prev_withdraw, 2),
                 "max_dd": 0.0,
+                "max_dd_amt": 0.0,
                 "max_lots": 0.0,
                 "has_data": False
             })
