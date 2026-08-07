@@ -85,6 +85,40 @@ double GetTotalWithdrawal()
   }
 
 //+------------------------------------------------------------------+
+//| คำนวณยอดฝากเงินสะสมทั้งหมด (Net Deposit)                               |
+//+------------------------------------------------------------------+
+double GetTotalDeposit()
+  {
+   double total_deposit = 0.0;
+   
+   // ดึงประวัติทั้งหมดตั้งแต่เริ่มจนถึงปัจจุบัน
+   if(HistorySelect(0, TimeCurrent()))
+     {
+      int total_deals = HistoryDealsTotal();
+      for(int i = 0; i < total_deals; i++)
+        {
+         ulong deal_ticket = HistoryDealGetTicket(i);
+         if(deal_ticket > 0)
+           {
+            long deal_type = HistoryDealGetInteger(deal_ticket, DEAL_TYPE);
+            // ตรวจสอบ Deal ประเภท Balance
+            if(deal_type == DEAL_TYPE_BALANCE) 
+              {
+               double deal_profit = HistoryDealGetDouble(deal_ticket, DEAL_PROFIT);
+               // ถ้ายอดเป็นบวก หมายถึงการฝากเงิน (deposit)
+               if(deal_profit > 0.0)
+                 {
+                  total_deposit += deal_profit;
+                 }
+              }
+           }
+        }
+     }
+     
+   return total_deposit;
+  }
+
+//+------------------------------------------------------------------+
 //| สร้างและส่งข้อมูล                                                     |
 //+------------------------------------------------------------------+
 void SendAccountData()
@@ -138,8 +172,9 @@ void SendAccountData()
         }
      }
      
-   // Withdrawal calculation (ฟังก์ชันที่เราเพิ่มเข้ามา)
-   double withdrawal = GetTotalWithdrawal();
+   // Withdrawal / Deposit calculation
+   double withdrawal  = GetTotalWithdrawal();
+   double net_deposit = GetTotalDeposit(); // ยอดฝากสะสมทั้งหมด (ไม่รวมทุนเริ่มต้น)
    
    // Drawdown calculation
    double peak_balance = MathMax(InpInitialBalance, balance);
@@ -196,6 +231,7 @@ void SendAccountData()
    json += "\"buy_lots\":" + DoubleToString(buy_lots, 2) + ",";
    json += "\"sell_lots\":" + DoubleToString(sell_lots, 2) + ",";
    json += "\"withdrawal\":" + DoubleToString(withdrawal, 2) + ",";
+   json += "\"net_deposit\":" + DoubleToString(net_deposit, 2) + ",";
    
    // Current MT5 time (Local to Server)
    datetime current_time = TimeCurrent();

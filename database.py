@@ -68,6 +68,7 @@ async def init_db(conn: asyncpg.Connection):
             buy_lots        DOUBLE PRECISION DEFAULT 0.0,
             sell_lots       DOUBLE PRECISION DEFAULT 0.0,
             withdrawal      DOUBLE PRECISION DEFAULT 0.0,
+            net_deposit     DOUBLE PRECISION DEFAULT 0.0,
             ts              TEXT NOT NULL,
             received_at     TIMESTAMPTZ DEFAULT NOW()
         )
@@ -80,6 +81,7 @@ async def init_db(conn: asyncpg.Connection):
         ("snapshots", "buy_lots",    "DOUBLE PRECISION DEFAULT 0.0"),
         ("snapshots", "sell_lots",   "DOUBLE PRECISION DEFAULT 0.0"),
         ("snapshots", "withdrawal",  "DOUBLE PRECISION DEFAULT 0.0"),
+        ("snapshots", "net_deposit", "DOUBLE PRECISION DEFAULT 0.0"),
         ("accounts",  "display_name","TEXT DEFAULT ''"),
     ]
     for table, col, col_def in migrations:
@@ -102,6 +104,18 @@ async def init_db(conn: asyncpg.Connection):
     # Index
     await conn.execute("CREATE INDEX IF NOT EXISTS idx_snap_alias_ts ON snapshots(alias, ts DESC)")
     await conn.execute("CREATE INDEX IF NOT EXISTS idx_snap_ts ON snapshots(ts DESC)")
+    await conn.execute("CREATE INDEX IF NOT EXISTS idx_snap_acct_num ON snapshots(account_number, ts DESC)")
+    
+    # Unique constraint: prevent same account_number with different aliases
+    # (Migration-safe: add unique index on accounts.account_number if not exists)
+    try:
+        await conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_acct_num
+            ON accounts(account_number)
+            WHERE account_number IS NOT NULL
+        """)
+    except Exception as e:
+        print("[DB] Note: account_number unique index:", e)
 
     # ตาราง global alert settings
     await conn.execute("""

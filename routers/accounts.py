@@ -44,17 +44,17 @@ async def get_stats_realized():
             new_cache = {}
             for alias in db.latest_cache.keys():
                 current_w = db.latest_cache[alias].get("withdrawal", 0.0) or 0.0
+                current_d = db.latest_cache[alias].get("net_deposit", 0.0) or 0.0
                 
                 # Snapshot แรกสุดในฐานข้อมูล = baseline สำหรับ balance
                 row_first = await conn.fetchrow(
-                    "SELECT balance, withdrawal FROM snapshots WHERE alias=$1 ORDER BY ts ASC LIMIT 1",
+                    "SELECT balance, withdrawal, net_deposit FROM snapshots WHERE alias=$1 ORDER BY ts ASC LIMIT 1",
                     alias
                 )
                 
                 # หา withdrawal baseline ที่แท้จริง:
-                # ถ้า snapshot แรกมี withdrawal=0 แต่ปัจจุบัน withdrawal > 0
-                # แสดงว่า 0 เป็นค่า default จาก migration → ใช้ snapshot แรกที่มี withdrawal > 0 แทน
                 wf_value = row_first["withdrawal"] if row_first else None
+                df_value = row_first["net_deposit"] if row_first else None
                 if row_first and (wf_value is None or wf_value == 0) and current_w > 0:
                     row_first_real_w = await conn.fetchrow(
                         "SELECT withdrawal FROM snapshots WHERE alias=$1 AND withdrawal > 0 ORDER BY ts ASC LIMIT 1",
@@ -65,12 +65,12 @@ async def get_stats_realized():
                 
                 # Snapshot ก่อนต้นวัน
                 row_today = await conn.fetchrow(
-                    "SELECT balance, withdrawal FROM snapshots WHERE alias=$1 AND ts < $2 ORDER BY ts DESC LIMIT 1",
+                    "SELECT balance, withdrawal, net_deposit FROM snapshots WHERE alias=$1 AND ts < $2 ORDER BY ts DESC LIMIT 1",
                     alias, today_start
                 )
                 # Snapshot ก่อนต้นสัปดาห์
                 row_week = await conn.fetchrow(
-                    "SELECT balance, withdrawal FROM snapshots WHERE alias=$1 AND ts < $2 ORDER BY ts DESC LIMIT 1",
+                    "SELECT balance, withdrawal, net_deposit FROM snapshots WHERE alias=$1 AND ts < $2 ORDER BY ts DESC LIMIT 1",
                     alias, week_start
                 )
                 # fallback ไปใช้ first snapshot ถ้าไม่มีก่อนต้นวัน/อาทิตย์
@@ -82,6 +82,9 @@ async def get_stats_realized():
                 # สำหรับ today/week withdrawal baseline ก็ต้องแก้เช่นกัน
                 wt_value = row_today["withdrawal"] if row_today else None
                 ww_value = row_week["withdrawal"]  if row_week else None
+                dt_value = row_today["net_deposit"] if row_today else None
+                dw_value = row_week["net_deposit"]  if row_week else None
+                
                 # ถ้า withdrawal=0 เป็น default จาก migration ให้ใช้ wf_value แทน (ค่าจริงแรกสุด)
                 if wt_value is not None and wt_value == 0 and current_w > 0 and wf_value:
                     wt_value = wf_value
@@ -91,10 +94,13 @@ async def get_stats_realized():
                 new_cache[alias] = {
                     "bf": row_first["balance"]    if row_first else None,
                     "wf": wf_value,
+                    "df": df_value or 0.0,
                     "bt": row_today["balance"]    if row_today else None,
                     "wt": wt_value,
+                    "dt": dt_value or 0.0,
                     "bw": row_week["balance"]     if row_week else None,
                     "ww": ww_value,
+                    "dw": dw_value or 0.0,
                 }
             cached_historical = new_cache
             last_bals_update = now
@@ -103,12 +109,14 @@ async def get_stats_realized():
     for alias, data in db.latest_cache.items():
         hist = cached_historical.get(alias, {})
         
-        current_bal = data.get("balance", 0.0)
+        current_bal        = data.get("balance", 0.0)
         current_withdrawal = data.get("withdrawal", 0.0)
+        current_deposit    = data.get("net_deposit", 0.0)
         
         # Baseline = snapshot แรกสุด
         bf = hist.get("bf")
         wf = hist.get("wf")
+        df = hist.get("df", 0.0)
         if bf is None:
             result[alias] = {"realized_today": None, "realized_week": None, "realized_all": None}
             continue
@@ -117,17 +125,19 @@ async def get_stats_realized():
         # Today/Week baselines (fallback = first snapshot)
         bt = hist.get("bt") if hist.get("bt") is not None else bf
         wt = hist.get("wt") if hist.get("wt") is not None else wf
+        dt = hist.get("dt", 0.0)
         bw = hist.get("bw") if hist.get("bw") is not None else bf
         ww = hist.get("ww") if hist.get("ww") is not None else wf
+        dw = hist.get("dw", 0.0)
         
-        # สูตร: (balance_now + withdrawal_now) - (balance_past + withdrawal_past)
-        # withdrawal ก่อนบันทึกหักกันเองในสมการ ได้ผลถูกต้องเสมอ
-        # net_withdrawal = ยอดถอนหลังจากเริ่มบันทึก (ตัดยอดก่อนหน้าออก)
+        # สูตร: (balance + withdrawal - net_deposit) - (prev_balance + prev_withdrawal - prev_deposit)
+        # ตัดยอดฝากเงิน (deposit) ออกจากกำไร เพื่อให้ได้กำไรที่แท้จริง
         result[alias] = {
-            "realized_today":  (current_bal + current_withdrawal) - (bt + wt),
-            "realized_week":   (current_bal + current_withdrawal) - (bw + ww),
-            "realized_all":    (current_bal + current_withdrawal) - (bf + wf),
-            "net_withdrawal":  current_withdrawal - wf,  # ถอนหลังจากเริ่มบันทึกเท่านั้น
+            "realized_today":  (current_bal + current_withdrawal - current_deposit) - (bt + wt - dt),
+            "realized_week":   (current_bal + current_withdrawal - current_deposit) - (bw + ww - dw),
+            "realized_all":    (current_bal + current_withdrawal - current_deposit) - (bf + wf - df),
+            "net_withdrawal":  current_withdrawal - wf,    # ถอนหลังจากเริ่มบันทึกเท่านั้น
+            "net_deposit_since": current_deposit - df,     # ฝากหลังจากเริ่มบันทึกเท่านั้น
             "baseline_withdrawal": wf,  # ยอดถอนสะสม ณ snapshot แรก (ก่อนเริ่มบันทึก)
         }
     return result

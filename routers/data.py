@@ -16,6 +16,13 @@ async def receive_data(payload: MT5DataPayload):
 
     async with db.pool.acquire() as conn:
         async with conn.transaction():
+            # ป้องกัน alias ซ้ำซ้อนสำหรับ account_number เดียวกัน
+            existing_account = await conn.fetchrow(
+                "SELECT alias FROM accounts WHERE account_number = $1", payload.account_number
+            )
+            if existing_account and existing_account["alias"] != payload.alias:
+                payload.alias = existing_account["alias"]
+
             # Upsert account info (ไม่อัพเดท display_name)
             await conn.execute("""
                 INSERT INTO accounts (alias, account_number, broker, server, currency, leverage, initial_balance)
@@ -37,16 +44,16 @@ async def receive_data(payload: MT5DataPayload):
                 INSERT INTO snapshots
                     (alias, account_number, balance, equity, margin, free_margin, margin_level,
                      profit, credit, initial_balance, drawdown_amount, drawdown_pct, equity_dd_pct,
-                     open_orders, buy_orders, sell_orders, total_lots, buy_lots, sell_lots, withdrawal, ts)
+                     open_orders, buy_orders, sell_orders, total_lots, buy_lots, sell_lots, withdrawal, net_deposit, ts)
                 VALUES
-                    ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+                    ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
             """,
                 payload.alias, payload.account_number,
                 payload.balance, payload.equity, payload.margin, payload.free_margin,
                 payload.margin_level, payload.profit, payload.credit, payload.initial_balance,
                 payload.drawdown_amount, payload.drawdown_pct, payload.equity_drawdown_pct,
                 payload.open_orders, payload.buy_orders, payload.sell_orders, payload.total_lots,
-                payload.buy_lots, payload.sell_lots, payload.withdrawal, ts
+                payload.buy_lots, payload.sell_lots, payload.withdrawal, payload.net_deposit, ts
             )
 
             # ลบข้อมูลเก่าเกิน MAX_HISTORY ต่อ account
@@ -91,6 +98,7 @@ async def receive_data(payload: MT5DataPayload):
         "buy_lots":        payload.buy_lots,
         "sell_lots":       payload.sell_lots,
         "withdrawal":      payload.withdrawal,
+        "net_deposit":     payload.net_deposit,
         "timestamp":       ts,
         "received_at":     datetime.now(db.TZ_BANGKOK).strftime('%Y-%m-%dT%H:%M:%S'),
         "active":          active,

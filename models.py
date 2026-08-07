@@ -26,6 +26,7 @@ class MT5DataPayload(BaseModel):
     buy_lots:           float     = 0.0
     sell_lots:          float     = 0.0
     withdrawal:         float     = 0.0
+    net_deposit:        float     = 0.0
     timestamp:          str       = ""
 
 class AccountConfig(BaseModel):

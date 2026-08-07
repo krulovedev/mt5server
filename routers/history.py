@@ -173,7 +173,7 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
     async with db.pool.acquire() as conn:
         # 1. First snapshot of this account for baseline
         row_first = await conn.fetchrow(
-            "SELECT balance, withdrawal, ts FROM snapshots WHERE alias=$1 ORDER BY ts ASC LIMIT 1",
+            "SELECT balance, withdrawal, net_deposit, ts FROM snapshots WHERE alias=$1 ORDER BY ts ASC LIMIT 1",
             alias
         )
         if not row_first:
@@ -181,7 +181,7 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
             
         # 2. Last snapshot before the year
         row_prev = await conn.fetchrow(
-            "SELECT balance, withdrawal, ts FROM snapshots WHERE alias=$1 AND ts < $2 ORDER BY ts DESC LIMIT 1",
+            "SELECT balance, withdrawal, net_deposit, ts FROM snapshots WHERE alias=$1 AND ts < $2 ORDER BY ts DESC LIMIT 1",
             alias, f"{year}-01-01T00:00:00"
         )
         
@@ -192,6 +192,7 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
                 SUBSTRING(ts, 1, 10) AS date_str,
                 balance,
                 withdrawal,
+                net_deposit,
                 ts
             FROM snapshots
             WHERE alias = $1 AND ts >= $2 AND ts <= $3
@@ -217,16 +218,22 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
 
     # Initialize baselines
     if row_prev:
-        prev_bal = row_prev["balance"]
+        prev_bal     = row_prev["balance"]
         prev_withdraw = row_prev["withdrawal"] or 0.0
+        prev_deposit  = row_prev["net_deposit"] or 0.0
     else:
-        prev_bal = row_first["balance"]
+        prev_bal     = row_first["balance"]
         prev_withdraw = row_first["withdrawal"] or 0.0
+        prev_deposit  = row_first["net_deposit"] or 0.0
 
     init_bal = prev_bal
     init_withdraw = prev_withdraw
 
-    day_snapshots = {r["date_str"]: (r["balance"], r["withdrawal"] or 0.0) for r in rows}
+    # day_snapshots: date_str -> (balance, withdrawal, net_deposit)
+    day_snapshots = {
+        r["date_str"]: (r["balance"], r["withdrawal"] or 0.0, r["net_deposit"] or 0.0)
+        for r in rows
+    }
     day_aggs = {r["date_str"]: (r["max_dd"] or 0.0, r.get("max_dd_amt") or 0.0, r["max_lots"] or 0.0) for r in agg_rows}
     
     first_date_str = row_first["ts"][:10]
@@ -244,25 +251,31 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
                 "profit": 0.0,
                 "balance": 0.0,
                 "withdrawal": 0.0,
+                "net_deposit": 0.0,
                 "max_dd": 0.0,
                 "max_dd_amt": 0.0,
                 "max_lots": 0.0,
                 "has_data": False
             })
         elif date_str in day_snapshots:
-            bal, withdraw = day_snapshots[date_str]
+            bal, withdraw, deposit = day_snapshots[date_str]
             max_dd, max_dd_amt, max_lots = day_aggs.get(date_str, (0.0, 0.0, 0.0))
             if prev_bal is not None:
-                profit = (bal + withdraw) - (prev_bal + prev_withdraw)
+                # สูตรกำไรที่แท้จริง: ตัดยอดฝาก (deposit) ออก ไม่นับเป็นกำไร
+                # profit = (balance_end + withdrawal_end - deposit_end)
+                #        - (balance_start + withdrawal_start - deposit_start)
+                profit = (bal + withdraw - deposit) - (prev_bal + prev_withdraw - prev_deposit)
             else:
                 profit = 0.0
-            prev_bal = bal
+            prev_bal     = bal
             prev_withdraw = withdraw
+            prev_deposit  = deposit
             days_data.append({
                 "date": date_str,
                 "profit": round(profit, 2),
                 "balance": round(bal, 2),
                 "withdrawal": round(withdraw, 2),
+                "net_deposit": round(deposit, 2),
                 "max_dd": round(max_dd, 2),
                 "max_dd_amt": round(max_dd_amt, 2),
                 "max_lots": round(max_lots, 2),
@@ -274,6 +287,7 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
                 "profit": 0.0,
                 "balance": round(prev_bal, 2) if prev_bal is not None else 0.0,
                 "withdrawal": round(prev_withdraw, 2),
+                "net_deposit": round(prev_deposit, 2),
                 "max_dd": 0.0,
                 "max_dd_amt": 0.0,
                 "max_lots": 0.0,
