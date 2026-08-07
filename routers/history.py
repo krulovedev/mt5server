@@ -230,12 +230,14 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
     init_withdraw = prev_withdraw
     init_deposit = prev_deposit
 
-    # day_snapshots: date_str -> (balance, withdrawal, net_deposit)
     day_snapshots = {
         r["date_str"]: (r["balance"], r["withdrawal"] or 0.0, r["net_deposit"] or 0.0)
         for r in rows
     }
     day_aggs = {r["date_str"]: (r["max_dd"] or 0.0, r.get("max_dd_amt") or 0.0, r["max_lots"] or 0.0) for r in agg_rows}
+    
+    seen_positive_withdraw = (prev_withdraw > 0)
+    seen_positive_deposit = (prev_deposit > 0)
     
     first_date_str = row_first["ts"][:10]
     start_date = date(year, 1, 1)
@@ -262,6 +264,15 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
             bal, withdraw, deposit = day_snapshots[date_str]
             max_dd, max_dd_amt, max_lots = day_aggs.get(date_str, (0.0, 0.0, 0.0))
             if prev_bal is not None:
+                # แก้ไขการกระโดดของข้อมูลเมื่อเริ่มมีการส่งข้อมูล deposit/withdrawal เป็นครั้งแรก
+                # หากค่าเดิมเป็น 0 แต่ค่าใหม่มีค่า ให้ถือว่าค่าใหม่คือค่าที่แท้จริงตั้งแต่เริ่มต้น (เพื่อให้ผลต่างกำไรไม่เพี้ยน)
+                if not seen_positive_withdraw and withdraw > 0:
+                    prev_withdraw = withdraw
+                    seen_positive_withdraw = True
+                if not seen_positive_deposit and deposit > 0:
+                    prev_deposit = deposit
+                    seen_positive_deposit = True
+                
                 # สูตรกำไรที่แท้จริง: ตัดยอดฝาก (deposit) ออก ไม่นับเป็นกำไร
                 # profit = (balance_end + withdrawal_end - deposit_end)
                 #        - (balance_start + withdrawal_start - deposit_start)

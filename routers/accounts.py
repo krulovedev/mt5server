@@ -53,8 +53,10 @@ async def get_stats_realized():
                 )
                 
                 # หา withdrawal baseline ที่แท้จริง:
+                # หา withdrawal/deposit baseline ที่แท้จริง
                 wf_value = row_first["withdrawal"] if row_first else None
                 df_value = row_first["net_deposit"] if row_first else None
+                
                 if row_first and (wf_value is None or wf_value == 0) and current_w > 0:
                     row_first_real_w = await conn.fetchrow(
                         "SELECT withdrawal FROM snapshots WHERE alias=$1 AND withdrawal > 0 ORDER BY ts ASC LIMIT 1",
@@ -62,6 +64,14 @@ async def get_stats_realized():
                     )
                     if row_first_real_w:
                         wf_value = row_first_real_w["withdrawal"]
+                        
+                if row_first and (df_value is None or df_value == 0) and current_d > 0:
+                    row_first_real_d = await conn.fetchrow(
+                        "SELECT net_deposit FROM snapshots WHERE alias=$1 AND net_deposit > 0 ORDER BY ts ASC LIMIT 1",
+                        alias
+                    )
+                    if row_first_real_d:
+                        df_value = row_first_real_d["net_deposit"]
                 
                 # Snapshot ก่อนต้นวัน
                 row_today = await conn.fetchrow(
@@ -85,11 +95,16 @@ async def get_stats_realized():
                 dt_value = row_today["net_deposit"] if row_today else None
                 dw_value = row_week["net_deposit"]  if row_week else None
                 
-                # ถ้า withdrawal=0 เป็น default จาก migration ให้ใช้ wf_value แทน (ค่าจริงแรกสุด)
+                # ถ้า baseline เป็น 0 (จากค่าเริ่มต้นก่อนเริ่มเก็บข้อมูล) ให้ใช้ค่าจริงแรกสุดแทน
                 if wt_value is not None and wt_value == 0 and current_w > 0 and wf_value:
                     wt_value = wf_value
                 if ww_value is not None and ww_value == 0 and current_w > 0 and wf_value:
                     ww_value = wf_value
+                
+                if dt_value is not None and dt_value == 0 and current_d > 0 and df_value:
+                    dt_value = df_value
+                if dw_value is not None and dw_value == 0 and current_d > 0 and df_value:
+                    dw_value = df_value
                 
                 new_cache[alias] = {
                     "bf": row_first["balance"]    if row_first else None,
