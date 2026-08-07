@@ -169,6 +169,7 @@ const API = '';
           <div class="metric"><div class="metric-label">Balance</div><div class="metric-value">${fmt(acc.balance)} <span style="font-size:10px;color:var(--muted)">${acc.currency||'USD'}</span></div></div>
           <div class="metric"><div class="metric-label">Equity</div><div class="metric-value">${fmt(acc.equity)}</div></div>
           <div class="metric"><div class="metric-label">Withdrawal (นับจากเริ่มบันทึก)</div><div class="metric-value" id="nw-${acc.alias}" style="color:var(--yellow)">...</div></div>
+          <div class="metric"><div class="metric-label">Deposit (นับจากเริ่มบันทึก)</div><div class="metric-value" id="nd-${acc.alias}" style="color:var(--accent)">...</div></div>
           
           <div class="metric"><div class="metric-label">Profit Today</div><div class="metric-value" id="rt-${acc.alias}">${acc.realized_today==null?'...':fmtN(acc.realized_today)}</div></div>
           <div class="metric"><div class="metric-label">Profit This Week</div><div class="metric-value" id="rw-${acc.alias}">${acc.realized_week==null?'...':fmtN(acc.realized_week)}</div></div>
@@ -206,19 +207,21 @@ const API = '';
           if(latestAccountsCache[alias]) {
             latestAccountsCache[alias].net_withdrawal = s.net_withdrawal;
             latestAccountsCache[alias].baseline_withdrawal = s.baseline_withdrawal ?? 0;
+            latestAccountsCache[alias].net_deposit_since = s.net_deposit_since;
           }
-          const update = (id, val, isProfit=true) => {
+          const update = (id, val, isProfit=true, customColor=null) => {
             const el = document.getElementById(id+'-'+alias);
             if(el){
               el.textContent = isProfit ? fmtN(val) : fmt(val);
               el.className = 'metric-value '+(isProfit ? (val>=0?'positive':'negative') : '');
-              if(!isProfit) el.style.color = 'var(--yellow)';
+              if(!isProfit) el.style.color = customColor || 'var(--yellow)';
             }
           };
           update('rt', s.realized_today);
           update('rw', s.realized_week);
           update('ra', s.realized_all);
           if(s.net_withdrawal != null) update('nw', s.net_withdrawal, false);
+          if(s.net_deposit_since != null) update('nd', s.net_deposit_since, false, 'var(--accent)');
         }
       }).catch(e=>console.error('Failed to load realized stats',e));
 
@@ -308,6 +311,7 @@ const API = '';
         sb('Avg Margin Lv',fmt(stats.avg_margin_level)+'%')+
         sb('Snapshots',hist.count||0)+
         sb('Total Withdrawal',fmt(latestAccountsCache[selectedAlias]?.net_withdrawal??latestAccountsCache[selectedAlias]?.withdrawal??0),'var(--yellow)')+
+        sb('Total Deposit',fmt(latestAccountsCache[selectedAlias]?.net_deposit_since??latestAccountsCache[selectedAlias]?.net_deposit??0),'var(--accent)')+
         sbAt('All-Time Max DD',fmt(at.max_drawdown_pct)+'%','var(--red)')+
         sbAt('All-Time Max Profit',fmtN(at.max_profit),'var(--green)')+
         sbAt('All-Time Min Profit',fmtN(at.min_profit),'var(--red)')+
@@ -386,7 +390,7 @@ const API = '';
       if(end&&end.length===16) end+=':59';
       const wrap=$('history-table-wrap');
       wrap.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted)">กำลังโหลด...</div>';
-      const res=await fetch(`${API}/api/history/${alias}?start=${start}&end=${end}&limit=${limit}&field=balance,equity,profit,drawdown_pct,equity_dd_pct,margin_level,open_orders,total_lots,buy_lots,sell_lots,ts,withdrawal`);
+      const res=await fetch(`${API}/api/history/${alias}?start=${start}&end=${end}&limit=${limit}&field=balance,equity,profit,drawdown_pct,equity_dd_pct,margin_level,open_orders,total_lots,buy_lots,sell_lots,ts,withdrawal,net_deposit`);
       const hist=await res.json();
       const data=(hist.data||[]).reverse();
       if(!data.length){wrap.innerHTML='<div class="empty"><p>ไม่มีข้อมูลในช่วงเวลานี้</p></div>';return;}
@@ -395,7 +399,7 @@ const API = '';
     <div class="data-table-wrap">
     <table>
       <thead><tr>
-        <th>เวลา (UTC+7)</th><th>Balance</th><th>Equity</th><th>Withdrawal</th><th>Profit</th>
+        <th>เวลา (UTC+7)</th><th>Balance</th><th>Equity</th><th>Deposit</th><th>Withdrawal</th><th>Profit</th>
         <th>DD%</th><th>Eq DD%</th><th>Margin Lv</th><th>Orders</th><th>Lots (Buy/Sell)</th>
       </tr></thead>
       <tbody>
@@ -403,6 +407,7 @@ const API = '';
           <td>${fmtDate(r.ts)}</td>
           <td>${fmt(r.balance)}</td>
           <td>${fmt(r.equity)}</td>
+          <td style="color:var(--accent)">${fmt(Math.max(0,(r.net_deposit||0) - (latestAccountsCache[alias]?.baseline_deposit??0)))}</td>
           <td style="color:var(--yellow)">${fmt(Math.max(0,(r.withdrawal||0) - (latestAccountsCache[alias]?.baseline_withdrawal??0)))}</td>
           <td style="color:${r.profit>=0?'var(--green)':'var(--red)'}">${fmtN(r.profit)}</td>
           <td style="color:${ddColor(r.drawdown_pct)}">${fmt(r.drawdown_pct,2)}%</td>
@@ -424,7 +429,7 @@ const API = '';
       let end=$('detail-end').value;
       if(start&&start.length===16) start+=':00';
       if(end&&end.length===16) end+=':59';
-      const res=await fetch(`${API}/api/history/${alias}?start=${start}&end=${end}&limit=2000&field=balance,equity,drawdown_pct,equity_dd_pct,profit,open_orders,buy_orders,sell_orders,total_lots,buy_lots,sell_lots,margin_level,free_margin,ts,withdrawal`);
+      const res=await fetch(`${API}/api/history/${alias}?start=${start}&end=${end}&limit=2000&field=balance,equity,drawdown_pct,equity_dd_pct,profit,open_orders,buy_orders,sell_orders,total_lots,buy_lots,sell_lots,margin_level,free_margin,ts,withdrawal,net_deposit`);
       const hist=await res.json();
       const data=hist.data||[];
       const wrap=$('detail-tab-content');
@@ -924,12 +929,17 @@ const API = '';
       
       const sortedDays = [...pnlYearlyCache.days].sort((a,b)=>a.date.localeCompare(b.date));
       
-      // Calculate daily withdrawal changes for the year
+      // Calculate daily withdrawal/deposit changes for the year
       let lastW = pnlYearlyCache.baseline_withdrawal || 0;
+      let lastD = pnlYearlyCache.baseline_deposit || 0;
       sortedDays.forEach(d => {
-        const change = d.withdrawal - lastW;
-        d.dailyWithdrawalChange = change > 0 ? change : 0;
+        const changeW = d.withdrawal - lastW;
+        d.dailyWithdrawalChange = changeW > 0 ? changeW : 0;
         lastW = d.withdrawal;
+        
+        const changeD = (d.net_deposit || 0) - lastD;
+        d.dailyDepositChange = changeD > 0 ? changeD : 0;
+        lastD = (d.net_deposit || 0);
       });
       
       // Month calculation
@@ -939,6 +949,7 @@ const API = '';
       
       let netProfit = 0.0;
       let totalW = 0.0;
+      let totalD = 0.0;
       let winDays = 0;
       let lossDays = 0;
       let tradingDays = 0;
@@ -952,6 +963,7 @@ const API = '';
           tradingDays++;
           netProfit += d.profit;
           totalW += d.dailyWithdrawalChange;
+          totalD += d.dailyDepositChange;
           
           if (d.profit > 0) {
             winDays++;
@@ -975,6 +987,7 @@ const API = '';
       netProfitEl.className = 'val ' + (netProfit > 0 ? 'pnl-pos' : netProfit < 0 ? 'pnl-neg' : '');
       
       $('pnl-stat-withdrawals').textContent = fmt(totalW);
+      $('pnl-stat-deposits').textContent = fmt(totalD);
       
       const winRate = tradingDays > 0 ? ((winDays / tradingDays) * 100).toFixed(1) + '%' : '0.0%';
       $('pnl-stat-winrate').textContent = `${winRate} (${winDays} วันชนะ / ${lossDays} วันแพ้)`;
@@ -993,6 +1006,7 @@ const API = '';
       let yTotalWinDays = 0;
       let yTotalLossDays = 0;
       let yTotalW = 0.0;
+      let yTotalD = 0.0;
       let yTotalProfit = 0.0;
       
       for (let m = 0; m < 12; m++) {
@@ -1001,6 +1015,7 @@ const API = '';
         
         let mProfit = 0.0;
         let mW = 0.0;
+        let mD = 0.0;
         let mWin = 0;
         let mLoss = 0;
         let mTrading = 0;
@@ -1010,6 +1025,7 @@ const API = '';
             mTrading++;
             mProfit += d.profit;
             mW += d.dailyWithdrawalChange;
+            mD += d.dailyDepositChange;
             if (d.profit > 0) mWin++;
             else if (d.profit < 0) mLoss++;
           }
@@ -1020,6 +1036,7 @@ const API = '';
         yTotalWinDays += mWin;
         yTotalLossDays += mLoss;
         yTotalW += mW;
+        yTotalD += mD;
         yTotalProfit += mProfit;
         
         const isCurrentMonth = m === pnlSelectedMonth;
@@ -1031,6 +1048,7 @@ const API = '';
             <td style="text-align:left; color:var(--text)">${monthNames[m]} ${isCurrentMonth ? '📌' : ''}</td>
             <td>${mTrading} วัน</td>
             <td><span class="pnl-pos">${mWin}</span> / <span class="pnl-neg">${mLoss}</span></td>
+            <td style="color:${mD > 0 ? 'var(--accent)' : 'var(--muted)'}">${fmt(mD)}</td>
             <td style="color:${mW > 0 ? 'var(--yellow)' : 'var(--muted)'}">${fmt(mW)}</td>
             <td class="${profitCls}" style="font-weight:600">${mProfit > 0 ? '+' : ''}${fmt(mProfit)}</td>
           </tr>
@@ -1042,6 +1060,7 @@ const API = '';
       // Footer annual summaries
       $('pnl-total-days').textContent = `${yTotalTradingDays} วัน`;
       $('pnl-total-winloss').innerHTML = `<span class="pnl-pos">${yTotalWinDays}</span> / <span class="pnl-neg">${yTotalLossDays}</span>`;
+      $('pnl-total-deposit').textContent = fmt(yTotalD);
       $('pnl-total-withdrawal').textContent = fmt(yTotalW);
       
       const yProfitEl = $('pnl-total-profit');

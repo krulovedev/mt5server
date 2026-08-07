@@ -228,6 +228,7 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
 
     init_bal = prev_bal
     init_withdraw = prev_withdraw
+    init_deposit = prev_deposit
 
     # day_snapshots: date_str -> (balance, withdrawal, net_deposit)
     day_snapshots = {
@@ -301,6 +302,7 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
         "year": year,
         "baseline_balance": round(init_bal, 2) if init_bal is not None else 0.0,
         "baseline_withdrawal": round(init_withdraw, 2),
+        "baseline_deposit": round(init_deposit, 2),
         "days": days_data
     }
 
