@@ -3,14 +3,23 @@ __pycache__/
 *.py[cod]
 *.pyo
 .env
+.env.*
 venv/
 .venv/
 
-# SQLite (ไม่ต้อง commit ขึ้น Git)
+# Database (ข้อมูลจริงอยู่บน Supabase — ห้าม commit)
 *.db
 *.sqlite
 *.sqlite3
 
-# OS
+# Render CLI
+.render/
+
+# Logs
+*.log
+
+# OS / Editor
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/

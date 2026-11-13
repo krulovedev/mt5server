@@ -1,202 +1,173 @@
-# MT5 Monitor - คู่มือติดตั้ง (Windows)
+# MT5 Monitor
 
-## โครงสร้างไฟล์
+ระบบติดตามบัญชี MetaTrader 5 แบบเรียลไทม์ — EA (`MT5_DataSender.mq5`) ส่งสถานะบัญชีเข้าสู่ API (FastAPI) เก็บลง **PostgreSQL (Supabase)** แล้วแสดงผลบน Dashboard เว็บ
 
 ```
-mt5-monitor/
-├── server.py          ← Python Server (FastAPI)
-├── dashboard.html     ← หน้า Dashboard
-├── start_server.bat   ← สคริปต์เปิด Server
-└── mt5_monitor.db     ← ฐานข้อมูล SQLite (สร้างอัตโนมัติ)
-
-MT5 Terminal/MQL5/Experts/
-└── MT5_DataSender.mq5 ← EA สำหรับส่งข้อมูล
+MT5 Terminal ──(HTTP POST /api/data ทุก 60 วิ)──> FastAPI (Render) ──> Supabase Postgres
+                                                        │
+                                                        └──> Dashboard (HTML/JS)
 ```
 
 ---
 
-## STEP 1: ติดตั้ง Python และ Dependencies
+## โครงสร้างโปรเจกต์
 
-```batch
-:: ติดตั้ง Python 3.10+ จาก https://python.org
+| ไฟล์ / โฟลเดอร์ | หน้าที่ |
+|---|---|
+| `server.py` | FastAPI app, startup/shutdown, background alert loop, `/health` |
+| `database.py` | ค่า config จาก env, connection pool (asyncpg), schema + seed |
+| `models.py` | Pydantic model ของ payload ที่ EA ส่งมา |
+| `routers/data.py` | `POST /api/data` — รับข้อมูลจาก EA (ตรวจ secret key) |
+| `routers/accounts.py` | รายการ account, latest, rename/toggle/delete |
+| `routers/history.py` | ประวัติ, stats, all-time, P&L calendar |
+| `routers/alerts.py` | ตั้งค่าแจ้งเตือน Telegram |
+| `index.html`, `dashboard.html`, `tabs/`, `static/` | หน้าเว็บ |
+| `MT5_DataSender.mq5` | EA ฝั่ง MT5 (คัดลอกไปที่ `MQL5/Experts/`) |
+| `render.yaml` | ค่าอ้างอิงสำหรับ deploy บน Render |
 
-:: ติดตั้ง packages
-pip install fastapi uvicorn aiosqlite pydantic
-```
+> ฐานข้อมูลเป็น **PostgreSQL เท่านั้น** (เดิมเคยใช้ SQLite — เลิกใช้แล้ว)
 
 ---
 
-## STEP 2: สร้างไฟล์ start_server.bat
+## Environment Variables
 
-สร้างไฟล์ `start_server.bat` ไว้ที่โฟลเดอร์เดียวกับ server.py:
+| Key | จำเป็น | คำอธิบาย |
+|---|---|---|
+| `DATABASE_URL` | ✅ | Supabase connection string |
+| `SECRET_KEY` | ✅ | รหัสที่ EA ต้องส่งมาให้ตรงกัน |
+| `SECRET_KEY_OLD` | — | คีย์เก่าที่ยังรับได้ชั่วคราว (คั่นด้วย `,` ถ้ามีหลายตัว) ใช้ตอน rotate |
+| `PYTHON_VERSION` | — | เช่น `3.11.9` |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | — | ค่า fallback ของแจ้งเตือน (ปกติตั้งใน Dashboard แทน) |
+
+สร้างไฟล์ `.env` สำหรับรันในเครื่อง (ถูก gitignore ไว้แล้ว):
+
+```ini
+DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
+SECRET_KEY=mysecretkey
+```
+
+### ค่า `DATABASE_URL` ของ Supabase
+
+ใช้ **Session pooler** (port `5432`) จาก *Supabase → Project Settings → Database → Connection string*
+
+```
+postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
+```
+
+- โค้ดจะตรวจจับ URL ที่มี `supabase.co`/`supabase.com` แล้วเปิด SSL + `statement_cache_size=0` ให้อัตโนมัติ (รองรับ PgBouncer)
+- ถ้าใช้ **transaction pooler (6543)** ก็ทำงานได้ แต่ session pooler เสถียรกว่าสำหรับ `asyncpg`
+
+---
+
+## รันในเครื่อง (Windows)
 
 ```batch
-@echo off
-cd /d %~dp0
-echo Starting MT5 Monitor Server...
+pip install -r requirements.txt
 python server.py
-pause
 ```
+
+เปิด http://localhost:8000 — ตรวจสุขภาพระบบที่ http://localhost:8000/health
 
 ---
 
-## STEP 3: ติดตั้ง MT5 EA
+## ติดตั้ง EA
 
-1. คัดลอก `MT5_DataSender.mq5` ไปยัง:
-   `C:\Users\[ชื่อ User]\AppData\Roaming\MetaQuotes\Terminal\[ID]\MQL5\Experts\`
-
-2. เปิด MetaEditor → Compile EA
-
-3. เปิด Tools > Options > Expert Advisors:
+1. คัดลอก `MT5_DataSender.mq5` → `...\MetaQuotes\Terminal\[ID]\MQL5\Experts\`
+2. Compile ใน MetaEditor
+3. MT5 → Tools → Options → Expert Advisors:
    - ✅ Allow automated trading
-   - ✅ Allow WebRequest for listed URL
-   - เพิ่ม: `http://127.0.0.1:8000`  (หรือ IP Server)
+   - ✅ Allow WebRequest for listed URL → เพิ่ม `https://mt5server-ar7z.onrender.com` (หรือ `http://127.0.0.1:8000` ถ้ารันในเครื่อง)
+4. ลาก EA ลง Chart แล้วตั้งค่า:
 
----
+| Parameter | ตัวอย่าง | คำอธิบาย |
+|---|---|---|
+| `InpServerURL` | `https://mt5server-ar7z.onrender.com/api/data` | ปลายทาง |
+| `InpAccountAlias` | `BTC_216` | ชื่อบัญชีที่แสดงบน Dashboard (ต้องไม่ซ้ำ) |
+| `InpSecretKey` | `mysecretkey` | ต้องตรงกับ `SECRET_KEY` บน server |
+| `InpInitialBalance` | `4200.0` | ทุนเริ่มต้น |
+| `InpTimerInterval` | `60` | ส่งทุกกี่วินาที |
 
-## STEP 4: ติด EA บน Chart
-
-กดลาก `MT5_DataSender` ลงบน Chart แล้วตั้งค่า:
-
-| Parameter        | ค่า                                    | คำอธิบาย                |
-|------------------|----------------------------------------|------------------------|
-| ServerURL        | `http://127.0.0.1:8000/api/data`       | URL Server             |
-| AccountAlias     | `MyAccount_01`                         | ชื่อที่แสดงใน Dashboard |
-| InitialBalance   | `10000.0`                              | ทุนเริ่มต้น (USD)       |
-| SendInterval     | `60`                                   | ส่งทุก 60 วินาที        |
-| SecretKey        | `mysecretkey`                          | ต้องตรงกับ server.py   |
-
-> ⚠️ ถ้ามี MT5 หลาย account ให้เปลี่ยน **AccountAlias** ให้ต่างกัน
-
----
-
-## STEP 5: เปิด Server
-
-ดับเบิลคลิก `start_server.bat`  
-หรือรัน: `python server.py`
-
-เปิด Dashboard: [http://localhost:8000](http://localhost:8000)
-
----
-
-## การตั้งค่า Secret Key (สำคัญมาก)
-
-แก้ค่า `SECRET_KEY` ใน `server.py` ให้ตรงกับ MQL5 EA:
-
-```python
-SECRET_KEY = "your_unique_secret_here"   # เปลี่ยนค่านี้
-```
-
----
-
-## ใช้ Server กับ MT5 หลาย Account
-
-แต่ละ MT5 account ติด EA 1 ตัว เปลี่ยนแค่:
-- **AccountAlias** → ชื่อที่ไม่ซ้ำกัน เช่น `Prop_01`, `Live_USD`, `Demo_Test`
-- **InitialBalance** → ทุนเริ่มต้นของแต่ละ account
-
-Server รองรับได้ไม่จำกัด account โดยอัตโนมัติ
+> หลายบัญชี = ติด EA หลายตัว เปลี่ยนแค่ `InpAccountAlias`
 
 ---
 
 ## API Endpoints
 
-| Method | URL                              | คำอธิบาย                      |
-|--------|----------------------------------|-------------------------------|
-| POST   | `/api/data`                      | รับข้อมูลจาก EA               |
-| GET    | `/api/latest`                    | ข้อมูลล่าสุดทุก account       |
-| GET    | `/api/latest/{alias}`            | ข้อมูลล่าสุด 1 account        |
-| GET    | `/api/history/{alias}`           | ข้อมูลย้อนหลัง                |
-| GET    | `/api/stats/{alias}?days=7`      | สถิติสรุป                     |
-| GET    | `/api/accounts`                  | รายชื่อ accounts               |
-| PATCH  | `/api/accounts/{alias}`          | แก้ไข config account          |
+| Method | URL | คำอธิบาย |
+|---|---|---|
+| POST | `/api/data` | รับข้อมูลจาก EA (ต้องมี `secret`) |
+| GET | `/health` | ตรวจสถานะ server + DB (`503` ถ้า DB ล่ม) |
+| GET | `/api/accounts` | รายชื่อ accounts |
+| GET | `/api/latest` | ข้อมูลล่าสุดทุก account |
+| GET | `/api/latest/{alias}` | ข้อมูลล่าสุด 1 account |
+| PATCH | `/api/accounts/{alias}` | แก้ไข config account |
+| PUT | `/api/accounts/{alias}/rename` | เปลี่ยนชื่อที่แสดง |
+| PUT | `/api/accounts/{alias}/toggle` | เปิด/ปิด account |
+| DELETE | `/api/accounts/{alias}` | ลบ account |
+| GET | `/api/history/{alias}` | ข้อมูลย้อนหลัง (`?start=&end=&limit=`) |
+| GET | `/api/stats/{alias}` | สถิติสรุป (`?days=7`) |
+| GET | `/api/alltime` , `/api/alltime/{alias}` | สรุปผลรวมทั้งหมด |
+| GET | `/api/pnl/calendar/{alias}` | P&L รายวัน (ปฏิทิน) |
+| GET | `/api/realized-profits` | กำไรที่ปิดแล้ว |
+| GET/POST | `/api/alerts/settings` | ตั้งค่า Telegram |
+| POST | `/api/alerts/account` | เปิด/ปิดแจ้งเตือนราย account |
+| POST | `/api/alerts/test` | ทดสอบส่งข้อความ |
+| GET | `/api/alerts/status` | สถานะการแจ้งเตือน |
 
-### ตัวอย่าง Query ย้อนหลัง
-```
-/api/history/MyAccount_01?start=2025-01-01T00:00:00&end=2025-01-31T23:59:59&limit=5000
+---
+
+## Deploy บน Render
+
+ค่าที่ใช้จริง (service ถูกสร้างด้วยมือ ไม่ได้ผูกกับ Blueprint):
+
+| Setting | ค่า |
+|---|---|
+| Repository | `https://github.com/krulovedev/mt5server` (branch `main`, auto-deploy) |
+| Runtime | Python 3.11.9 |
+| Build Command | `pip install -r requirements.txt` |
+| Start Command | `uvicorn server:app --host 0.0.0.0 --port $PORT` |
+| Health Check Path | `/health` |
+| Plan / Region | free / oregon |
+
+ตั้ง `DATABASE_URL` และ `SECRET_KEY` ใน **Dashboard → Environment**
+
+### คำสั่งที่ใช้บ่อย (Render CLI)
+
+```bash
+render login
+render workspace set tea-d8h31sjtqb8s739c4pp0
+render services                                  # ดู service + ID
+render deploys list srv-d99k3o28qa3s73d61fgg     # ประวัติ deploy
+render deploys create srv-d99k3o28qa3s73d61fgg   # สั่ง deploy ใหม่
+render logs --resources srv-d99k3o28qa3s73d61fgg --tail
 ```
 
 ---
 
-## เพิ่มประสิทธิภาพ (Production)
+## การเปลี่ยน `SECRET_KEY` (rotate) โดยไม่ให้ EA หลุด
 
-### ใช้ Windows Service (เปิดอัตโนมัติตอน Boot)
-
-```batch
-pip install pywin32
-python -c "import win32serviceutil"
-```
-
-หรือใช้ NSSM (Non-Sucking Service Manager):
-```batch
-nssm install MT5Monitor python "C:\mt5-monitor\server.py"
-nssm set MT5Monitor AppDirectory "C:\mt5-monitor"
-nssm start MT5Monitor
-```
-
-### Firewall (ถ้า MT5 อยู่เครื่องอื่น)
-```batch
-netsh advfirewall firewall add rule name="MT5Monitor" dir=in action=allow protocol=TCP localport=8000
-```
+1. ตั้ง `SECRET_KEY` = คีย์ใหม่ ใน Render → Environment
+2. ตั้ง `SECRET_KEY_OLD` = `mysecretkey` (คีย์เดิม) — server จะรับทั้งสองคีย์
+3. อัปเดต `InpSecretKey` ใน EA ให้เป็นคีย์ใหม่
+4. เมื่อ EA ทุกตัวอัปเดตแล้ว → ลบ `SECRET_KEY_OLD` ออก
 
 ---
 
-## Performance
+## Troubleshooting
 
-- EA ใช้ **EventSetTimer** (ไม่ใช้ OnTick) → CPU ต่ำมาก
-- Server ใช้ **async/await + SQLite WAL mode** → RAM ~30MB
-- Dashboard **polling ทุก 30 วินาที** (ปรับได้)
-ailscale funnel --bg localhost:3000
----
-
-## Deploy บน Render.com
-
-### ขั้นตอน
-
-1. **Push โปรเจกต์ขึ้น GitHub** (ถ้ายังไม่มี repo)
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git remote add origin https://github.com/YOUR_USER/mt5server.git
-   git push -u origin main
-   ```
-
-2. **สร้าง Web Service บน Render**
-   - ไปที่ [render.com](https://render.com) → **New → Web Service**
-   - เลือก repository จาก GitHub
-   - Render จะอ่านค่าจาก `render.yaml` อัตโนมัติ
-
-   หรือตั้งค่าด้วยมือ:
-   | Setting       | ค่า                                          |
-   |---------------|----------------------------------------------|
-   | Runtime       | Python 3                                     |
-   | Build Command | `pip install -r requirements.txt`            |
-   | Start Command | `uvicorn server:app --host 0.0.0.0 --port $PORT` |
-
-3. **ตั้ง Environment Variables** ใน Render Dashboard → Environment:
-   | Key         | Value                    |
-   |-------------|--------------------------|
-   | `SECRET_KEY`| รหัสลับที่ต้องการ (เปลี่ยนจาก `mysecretkey`) |
-
-4. **เพิ่ม Persistent Disk** (สำคัญ! ไม่งั้น DB หายทุก deploy)
-   - Render Dashboard → ไปที่ service → **Disks → Add Disk**
-   - Mount Path: `/data`
-   - ขนาด: `1 GB` (free tier ไม่รองรับ disk → ต้องใช้ Starter plan ขึ้นไป)
-
-   > ⚠️ **Free Tier**: ไม่รองรับ persistent disk — ข้อมูล SQLite จะหายทุกครั้งที่ redeploy!
-   > แนะนำให้ upgrade เป็น Starter ($7/เดือน) ถ้าต้องการเก็บข้อมูลถาวร
-
-5. **อัปเดต MT5 EA** — เปลี่ยน `ServerURL` เป็น URL ของ Render:
-   ```
-   https://mt5-monitor.onrender.com/api/data
-   ```
-
-6. **อนุญาต WebRequest ใน MT5**
-   - Tools → Options → Expert Advisors → Allow WebRequest for listed URL
-   - เพิ่ม: `https://mt5-monitor.onrender.com`
+| อาการ | สาเหตุ/วิธีแก้ |
+|---|---|
+| เว็บค้าง ไม่ตอบสนอง (timeout) นานผิดปกติ | Render free tier **sleep** หลังไม่มีคนใช้ ~15 นาที — request แรกจะปลุก 30–60 วิ (EA ที่ส่งทุก 60 วิช่วย keep-alive) |
+| Deploy `Live` แต่เว็บไม่ขึ้น | ดู log: มักเป็น `Application startup failed` เพราะ `DATABASE_URL` ต่อไม่ได้ |
+| `asyncpg ... (ENOTFOUND) tenant/user ... not found` | โปรเจกต์ Supabase ถูก **pause** (free tier) → restore ที่ Dashboard หรือ `POST /v1/projects/{ref}/restore` |
+| `401 Unauthorized` จาก `/api/data` | `InpSecretKey` ใน EA ไม่ตรงกับ `SECRET_KEY` ของ server |
+| `WebRequest not allowed` | ยังไม่ได้เพิ่ม URL ใน Allow WebRequest |
+| ข้อมูลหายหลัง redeploy | ตรวจว่า `DATABASE_URL` ยังชี้ Supabase (ไม่ใช่ SQLite ในเครื่อง) |
 
 ---
 
-> ⚠️ **Render Free Tier Sleep**: service จะ sleep หลัง 15 นาทีที่ไม่มีคนใช้
-> MT5 EA ที่ส่งข้อมูลทุก 60 วินาทีจะช่วย keep-alive service ได้โดยอัตโนมัติ
+## หมายเหตุ
+
+- `snapshots` เก็บสูงสุด `MAX_HISTORY = 100000` แถวต่อ account (ลบเก่าอัตโนมัติเมื่อรับข้อมูลใหม่)
+- Supabase free tier จะ pause ถ้าไม่มี activity ~7 วัน — EA ที่ส่งข้อมูลสม่ำเสมอป้องกันเรื่องนี้ได้
+- อย่า commit `.env` หรือ `DATABASE_URL` ลง git

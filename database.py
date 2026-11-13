@@ -13,6 +13,10 @@ load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY", "MY_SUPER_SECRET_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL", "postgres://postgres:123456@localhost:5432/postgres")
 
+# คีย์ที่ยังรับได้ระหว่างการ rotate (คั่นด้วย comma) — ใช้ชั่วคราวเพื่อไม่ให้ EA หลุด
+# ตั้ง SECRET_KEY=คีย์ใหม่ + SECRET_KEY_OLD=คีย์เก่า แล้วลบ SECRET_KEY_OLD เมื่อ EA อัปเดตครบ
+SECRET_KEYS = {k.strip() for k in [SECRET_KEY, *os.getenv("SECRET_KEY_OLD", "").split(",")] if k.strip()}
+
 # Fallback Telegram (จะถูกแทนที่ด้วยค่าจาก DB ถ้ามี)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")

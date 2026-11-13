@@ -1,12 +1,22 @@
+# ใช้เป็นเอกสารอ้างอิงค่าระบบ (Blueprint)
+# service ที่รันอยู่จริงถูกสร้างด้วยมือ ชื่อ `mt5server` (srv-d99k3o28qa3s73d61fgg)
+# ค่าที่เป็นความลับใช้ `sync: false` → ตั้งค่าเองใน Dashboard > Environment
 services:
   - type: web
-    name: mt5-monitor
-    env: python
+    name: mt5server
+    runtime: python
+    plan: free
+    region: oregon
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "python server.py"
+    startCommand: "uvicorn server:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    autoDeploy: true
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
       - key: SECRET_KEY
-        value: mysecretkey          # ⚠️ เปลี่ยนเป็นรหัสที่ปลอดภัยใน Render Dashboard!
+        sync: false            # รหัสลับที่ EA ใช้ส่งข้อมูล (ตั้งใน Dashboard)
+      - key: SECRET_KEY_OLD
+        sync: false            # คีย์เก่าที่ยังรับได้ชั่วคราวระหว่าง rotate (ไม่บังคับ)
       - key: DATABASE_URL
-        value: ""                   # ← วาง Supabase Connection String ที่นี่
-                                    #   postgresql://postgres:[PASSWORD]@db.[REF].supabase.co:5432/postgres
+        sync: false            # Supabase connection string (session pooler, port 5432)

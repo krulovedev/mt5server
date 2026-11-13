@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 import asyncio
 from datetime import datetime
 import os
@@ -127,6 +127,19 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     await db.close_db_pool()
+
+# ===========================
+# HEALTH CHECK (สำหรับ Render / monitoring)
+# ===========================
+@app.get("/health")
+async def health():
+    try:
+        async with db.pool.acquire() as conn:
+            await conn.fetchval("SELECT 1")
+        return {"status": "ok", "db": "up", "time": datetime.now(db.TZ_BANGKOK).isoformat()}
+    except Exception as e:
+        return JSONResponse(status_code=503, content={"status": "degraded", "db": "down", "error": str(e)})
+
 
 # ===========================
 # FRONTEND ROUTE

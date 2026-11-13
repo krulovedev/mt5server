@@ -8,7 +8,7 @@ router = APIRouter()
 @router.post("/api/data")
 async def receive_data(payload: MT5DataPayload):
     """รับข้อมูลจาก MQL5 EA"""
-    if payload.secret != db.SECRET_KEY:
+    if payload.secret not in db.SECRET_KEYS:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     ts = payload.timestamp or datetime.now(db.TZ_BANGKOK).strftime('%Y-%m-%dT%H:%M:%S')
