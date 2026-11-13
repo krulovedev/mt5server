@@ -89,6 +89,49 @@ python server.py
 
 > หลายบัญชี = ติด EA หลายตัว เปลี่ยนแค่ `InpAccountAlias`
 
+### EA v2.0 — Dashboard บน chart + สถิติเพิ่มเติม
+
+EA (ตั้งแต่ v2.00) รวมความสามารถของ `AccountDashboardPro` ไว้ในตัวเดียว จึง **ไม่ต้องติด indicator บน chart อีก** (ถ้าติดทั้งคู่จะเห็น Dashboard ซ้อนกัน)
+
+| กลุ่ม | Input | ค่า | คำอธิบาย |
+|---|---|---|---|
+| Statistics | `InpUseStatsStartDate` | `false` | กำหนดวันเริ่มนับสถิติเอง |
+| | `InpStatsStartDate` | `2024.01.01` | วันเริ่มนับ (broker time) |
+| | `InpUseGlobalVars` | `true` | จำค่า DD ข้ามการรีสตาร์ท MT5 |
+| | `InpFullResyncMinutes` | `360` | full resync history ทุกกี่นาที (`0`=ปิด) |
+| | `InpSendExtended` | `true` | ส่งสถิติชุดใหม่ไป server |
+| Dashboard | `InpShowDashboard` | `true` | แสดง Dashboard บน chart |
+| | `InpCorner` / `InpBaseX` / `InpBaseY` | | ตำแหน่ง |
+| | `InpLineSpacing` / `InpFontName` / `InpFontSize` | | รูปแบบตัวอักษร |
+| | `InpDDAsPercent` / `InpShowDDTime` | | รูปแบบการแสดง DD |
+| | `InpShowResetButton` | `true` | ปุ่ม Reset DD |
+
+**Dashboard บน chart แสดง 11 บรรทัด:** Buy / Sell / Total (orders + lots), P/L Today / Week / Total, Max DD Today / Week / Total (floating) + lots + เวลา, Stats Since, สถานะการส่งล่าสุด + ปุ่ม Reset DD
+
+### ฟิลด์ใหม่ที่ EA v2.0 ส่งไป server
+
+| ฟิลด์ | ความหมาย |
+|---|---|
+| `pl_today` / `pl_week` / `pl_total` | กำไร = closed + floating |
+| `closed_pl_today` / `closed_pl_week` / `closed_pl_total` | กำไรจาก deal ที่ปิดแล้ว |
+| `vol_today` / `vol_week` / `vol_total` | volume ที่ใช้ผลิตกำไร (closed lots + lots ที่เปิด) |
+| `dd_today` / `dd_week` / `dd_total` | Max drawdown จาก **floating loss** |
+| `dd_*_at` / `dd_*_lots` | เวลาที่ DD สูงสุด / lots ที่เปิดตอนนั้น |
+| `stats_start` | วันเริ่มนับสถิติ (`""` = all-time) |
+
+> EA v1.5 ที่ยังไม่ิปเดตยังส่งข้อมูลได้ปกติ ฟิลด์ใหม่จะเป็น `NULL` (ระบบตรวจ `Optional` ไว้แล้ว)
+
+### ประสิทธิภาพ (ทำไมกินทรัพยากรน้อย)
+
+- **Timer เดียว 1 วินาที** (เดิม indicator + EA ใช้ timer คนละตัว) — งานต่อวินาทีคือวนเฉพาะ positions ที่เปิดอยู่
+- **History อ่านแบบ incremental** ด้วย watermark (deal time + ticket): 1 รอบส่งข้อมูลวนเฉพาะ deal ใหม่ ไม่วนทั้ง history
+- **Full resync เป็นรอบ** (ค่าเริ่มต้นทุก 6 ชม.) กันข้อมูลคลาดเคลื่อนจากการโหลด history ย้อนหลัง
+- **Bucket Today/Week** คำนวณใหม่เฉพาะตอนเปลี่ยนวัน/สัปดาห์
+- **UI อัปเดตเมื่อข้อความเปลี่ยน** + `ChartRedraw()` เฉพาะตอนเปลี่ยน
+- **GlobalVariable** เขียนเมื่อค่าเปลี่ยน (เดิมเขียน 10 ตัวทุกวินาที)
+- ฝั่ง server ใช้ `warm_latest_cache()` เติม cache จาก snapshot ล่าสุดตอน startup → dashboard ไม่ว่างหลัง deploy
+
+
 ---
 
 ## API Endpoints

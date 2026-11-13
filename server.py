@@ -61,6 +61,10 @@ async def alert_monitor_loop():
                 if acc_settings.get(alias, True) is False:
                     continue
 
+                # ข้ามรายการที่โหลดจาก DB ตอน startup (ยังไม่ได้รับข้อมูลจริงในรอบนี้)
+                if data_dict.get("_warm"):
+                    continue
+
                 display_name = data_dict.get("display_name", alias)
                 received_str = data_dict.get("received_at", "")
                 if not received_str:
@@ -121,6 +125,7 @@ async def alert_monitor_loop():
 @app.on_event("startup")
 async def startup():
     await db.get_db_pool()
+    await db.warm_latest_cache()
     asyncio.create_task(alert_monitor_loop())
     print("[System] API Server กำลังทำงาน...")
 

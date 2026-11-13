@@ -318,6 +318,12 @@ void SyncHistory(bool full)
       RecalcBucket(0);
       RecalcBucket(1);
      }
+   else if(g_lastDealTime <= 0)
+     {
+      // ไม่พบ deal เลย → เลื่อน watermark แบบมีขอบเขต เพื่อไม่ให้สแกน window เดิมซ้ำทุกครั้ง
+      // (deal เก่าที่โหลดย้อนหลังจะถูกเก็บด้วย full resync ตามรอบ)
+      g_lastDealTime = now - 86400;
+     }
   }
 
 //+------------------------------------------------------------------+

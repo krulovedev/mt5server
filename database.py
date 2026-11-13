@@ -193,6 +193,55 @@ async def get_db_pool():
     pool = await asyncpg.create_pool(DATABASE_URL, **kwargs)
     return pool
 
+# ---- คอลัมน์สถิติชุดใหม่ (ต้องตรงกับ routers/data.py: EXT_COLS) ----
+_EXT_COLS = [
+    "pl_today", "pl_week", "pl_total",
+    "closed_pl_today", "closed_pl_week", "closed_pl_total",
+    "vol_today", "vol_week", "vol_total",
+    "dd_today", "dd_today_at", "dd_today_lots",
+    "dd_week", "dd_week_at", "dd_week_lots",
+    "dd_total", "dd_total_at", "dd_total_lots",
+    "stats_start",
+]
+
+async def warm_latest_cache():
+    """
+    เติม latest_cache จาก snapshot ล่าสุดใน DB ตอน startup
+    เพื่อให้ dashboard แสดงข้อมูลล่าสุดได้ทันทีหลัง deploy (ไม่ต้องรอ EA ส่งรอบใหม่)
+    รายการที่โหลดแบบนี้จะถูกทำเครื่องหมาย _warm=True → alert loop จะข้ามไม่แจ้งเตือน
+    """
+    if pool is None:
+        return
+    ext = ", ".join(f"s.{c}" for c in _EXT_COLS)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(f"""
+            SELECT DISTINCT ON (s.alias)
+                   s.alias, s.account_number, s.balance, s.equity, s.margin, s.free_margin,
+                   s.margin_level, s.profit, s.credit, s.initial_balance,
+                   s.drawdown_amount, s.drawdown_pct, s.equity_dd_pct,
+                   s.open_orders, s.buy_orders, s.sell_orders, s.total_lots, s.buy_lots, s.sell_lots,
+                   s.withdrawal, s.net_deposit, s.ts, s.received_at,
+                   {ext},
+                   a.display_name, a.active, a.leverage, a.currency, a.broker, a.server
+            FROM snapshots s
+            LEFT JOIN accounts a ON a.alias = s.alias
+            ORDER BY s.alias, s.ts DESC
+        """)
+
+    for r in rows:
+        d = dict(r)
+        ra = d.get("received_at")
+        if ra is not None:
+            d["received_at"] = ra.strftime('%Y-%m-%dT%H:%M:%S')
+        d["display_name"] = d.get("display_name") or d["alias"]
+        d["active"]       = d.get("active") if d.get("active") is not None else 1
+        d["leverage"]     = d.get("leverage") or 100
+        d["currency"]     = d.get("currency") or "USD"
+        d["_warm"]        = True
+        latest_cache[d["alias"]] = d
+
+    print(f"[DB] warm latest_cache: {len(rows)} accounts")
+
 async def close_db_pool():
     global pool
     if pool:
