@@ -20,7 +20,14 @@ BASE_PLACEHOLDERS = 22   # จำนวนค่าพื้นฐานก่�
 @router.post("/api/data")
 async def receive_data(payload: MT5DataPayload):
     """รับข้อมูลจาก MQL5 EA"""
-    if payload.secret not in db.SECRET_KEYS:
+    # trim เพื่อกันช่องว่าง/ขึ้นบรรทัดใหม่ที่ติดมาจากการ copy-paste ในช่อง input ของ MT5
+    received = (payload.secret or "").strip()
+    if received not in db.SECRET_KEYS:
+        print(
+            f"[AUTH] 401 alias={payload.alias} len={len(received)} "
+            f"head={received[:4]!r} tail={received[-2:]!r} "
+            f"(server keys len={[len(k) for k in db.SECRET_KEYS]})"
+        )
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     ts = payload.timestamp or datetime.now(db.TZ_BANGKOK).strftime('%Y-%m-%dT%H:%M:%S')
