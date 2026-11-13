@@ -74,10 +74,6 @@ const API = '';
       showToast('↺ กลับค่าเริ่มต้นแล้ว');
     }
 
-    // ใช้ค่าที่บันทึกไว้ทันทีตั้งแต่โหลดหน้า
-    updateModeButtons();
-    applyModeBg();
-
     const $ = id => document.getElementById(id);
     const fmt = (n, d=2) => n==null?'—':(+n).toFixed(d);
     const fmtN = (n, d=2) => {
@@ -178,6 +174,10 @@ const API = '';
       },1000);
     }
     startCountdown();
+
+    // ใช้โหมด + สีพื้นหลังที่บันทึกไว้ ตั้งแต่โหลดหน้า (ต้องอยู่หลังการประกาศ $)
+    updateModeButtons();
+    applyModeBg();
 
     window.onTabLoaded = async function(name) {
       currentTab = name;
