@@ -29,11 +29,54 @@ const API = '';
       acctMode = m;
       localStorage.setItem('acctMode', m);
       updateModeButtons();
+      applyModeBg();
       selectedAlias = null;
       const dp = $('detail-panel'); if(dp) dp.style.display = 'none';
       latestAccountsCache = {};
       if(window.onTabLoaded) window.onTabLoaded(currentTab || 'overview');
     }
+
+    // === สีพื้นหลังแยกตามโหมด (จริง / ทดลอง / ทั้งหมด) ===
+    const MODE_BG_KEY = 'acctModeBg';
+    const MODE_BG_DEFAULT = { real: '#08160f', demo: '#171207', all: '#0a0e1a' };
+    let modeBg = (function(){
+      try { return Object.assign({}, MODE_BG_DEFAULT, JSON.parse(localStorage.getItem(MODE_BG_KEY) || '{}')); }
+      catch(e) { return Object.assign({}, MODE_BG_DEFAULT); }
+    })();
+
+    function applyModeBg(){
+      const c = modeBg[acctMode] || MODE_BG_DEFAULT[acctMode];
+      document.documentElement.style.setProperty('--bg-mode', c);
+    }
+
+    function previewModeBg(mode, color){
+      modeBg[mode] = color;
+      const hex = $('bghex-' + mode);
+      if(hex) hex.textContent = color.toUpperCase();
+      if(mode === acctMode) applyModeBg();
+    }
+
+    function saveModeBg(){
+      ['real','demo','all'].forEach(function(m){
+        const el = $('bgc-' + m);
+        if(el && el.value) modeBg[m] = el.value;
+      });
+      localStorage.setItem(MODE_BG_KEY, JSON.stringify(modeBg));
+      applyModeBg();
+      showToast('✓ บันทึกสีพื้นหลังแล้ว');
+    }
+
+    function resetModeBg(){
+      modeBg = Object.assign({}, MODE_BG_DEFAULT);
+      localStorage.setItem(MODE_BG_KEY, JSON.stringify(modeBg));
+      applyModeBg();
+      if(currentTab === 'settings') loadSettings();
+      showToast('↺ กลับค่าเริ่มต้นแล้ว');
+    }
+
+    // ใช้ค่าที่บันทึกไว้ทันทีตั้งแต่โหลดหน้า
+    updateModeButtons();
+    applyModeBg();
 
     const $ = id => document.getElementById(id);
     const fmt = (n, d=2) => n==null?'—':(+n).toFixed(d);
@@ -556,8 +599,37 @@ const API = '';
       const res=await fetch(API+'/api/accounts'+apiQs());
       const accounts=await res.json();
       const wrap=$('settings-content');
-      if(!accounts.length){wrap.innerHTML='<div class="empty"><p>ยังไม่มี Account ที่ส่งข้อมูลมา</p></div>';return;}
-      wrap.innerHTML=accounts.map(acc=>`
+
+      const colorCard = `
+    <div class="settings-card">
+      <h3>🎨 สีพื้นหลังตามโหมด</h3>
+      <div class="form-row"><label>🟢 บัญชีจริง (Real)</label>
+        <div class="color-row">
+          <input type="color" id="bgc-real" value="${modeBg.real}" oninput="previewModeBg('real', this.value)">
+          <span class="bghex" id="bghex-real">${modeBg.real.toUpperCase()}</span>
+        </div>
+      </div>
+      <div class="form-row"><label>🟡 บัญชีทดลอง (Demo)</label>
+        <div class="color-row">
+          <input type="color" id="bgc-demo" value="${modeBg.demo}" oninput="previewModeBg('demo', this.value)">
+          <span class="bghex" id="bghex-demo">${modeBg.demo.toUpperCase()}</span>
+        </div>
+      </div>
+      <div class="form-row"><label>⚪ ทั้งหมด (All)</label>
+        <div class="color-row">
+          <input type="color" id="bgc-all" value="${modeBg.all}" oninput="previewModeBg('all', this.value)">
+          <span class="bghex" id="bghex-all">${modeBg.all.toUpperCase()}</span>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">เลือกสีจะเห็นผลทันทีถ้าโหมดนั้นกำลังใช้งานอยู่ · แนะนำโทนเข้มเพื่อให้ตัวอักษรอ่านง่าย</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn" onclick="saveModeBg()" style="flex:1">💾 บันทึกสี</button>
+        <button class="btn" onclick="resetModeBg()" style="flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text)">↺ ค่าเริ่มต้น</button>
+      </div>
+    </div>`;
+
+      if(!accounts.length){wrap.innerHTML=colorCard+'<div class="empty"><p>ยังไม่มี Account ที่ส่งข้อมูลมา</p></div>';return;}
+      wrap.innerHTML=colorCard+accounts.map(acc=>`
     <div class="settings-card">
       <h3>⚙️ <span>${acc.display_name||acc.alias}</span>
         <span style="font-size:10px;color:var(--muted);font-weight:400">${acc.display_name?'('+acc.alias+')':''}</span>
