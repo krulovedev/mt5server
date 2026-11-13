@@ -557,3 +557,49 @@
 @media (max-width: 480px) {
   .mt5dd-grid { grid-template-columns: 1fr; }
 }
+
+/* ===== สลับโหมดบัญชีจริง/ทดลอง ===== */
+.mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .25);
+}
+.mode-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, color .15s;
+}
+.mode-btn:hover { color: var(--text); }
+.mode-btn.active { background: var(--accent); color: #04121c; }
+
+/* ===== ป้ายประเภทบัญชีบนการ์ด ===== */
+.acc-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.acc-badge.real    { background: rgba(0, 230, 118, .18); color: var(--green); border: 1px solid rgba(0, 230, 118, .4); }
+.acc-badge.demo    { background: rgba(255, 214, 0, .16); color: #ffd600; border: 1px solid rgba(255, 214, 0, .4); }
+.acc-badge.contest { background: rgba(0, 212, 255, .15); color: var(--accent); border: 1px solid rgba(0, 212, 255, .4); }
+.acc-badge.unknown { background: rgba(100, 116, 139, .18); color: var(--muted); border: 1px solid rgba(100, 116, 139, .4); }
+
+@media (max-width: 720px) {
+  .mode-switch { order: 3; width: 100%; justify-content: center; }
+  .mode-btn { flex: 1; }
+}

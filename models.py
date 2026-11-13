@@ -29,6 +29,8 @@ class MT5DataPayload(BaseModel):
     withdrawal:         float     = 0.0
     net_deposit:        float     = 0.0
     timestamp:          str       = ""
+    # ประเภทบัญชี: real | demo | contest | unknown (EA v2.01 ส่งมา)
+    account_type:       Optional[str] = None
 
     # --- สถิติชุดใหม่ (EA v2.0 / AccountDashboardPro) ---
     # P/L = closed + floating (ตามมุมมองของ EA)
@@ -58,6 +60,7 @@ class AccountConfig(BaseModel):
     alias:           str
     initial_balance: float = 10000.0
     note:            str   = ""
+    account_type:    Optional[str] = None   # กำหนดเองได้: real | demo | contest
 
 class AccountRename(BaseModel):
     display_name: str

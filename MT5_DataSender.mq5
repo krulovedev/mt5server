@@ -16,7 +16,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, MT5Monitor"
 #property link      ""
-#property version   "2.00"
+#property version   "2.01"
 
 #define DASH_LINES   11
 #define GV_PREFIX    "MT5DS_"
@@ -25,9 +25,9 @@
 //| Inputs                                                           |
 //+------------------------------------------------------------------+
 input group "=== Server ==="
-input string   InpServerURL      = "http://127.0.0.1:8000/api/data"; // Server URL
+input string   InpServerURL      = "https://mt5server-ar7z.onrender.com/api/data"; // Server URL
 input string   InpAccountAlias   = "MyAccount_01";                   // Account Alias
-input string   InpSecretKey      = "mysecretkey";                    // Secret Key
+input string   InpSecretKey      = "mt5_j74aWQrSrEgH7gX7pLCXgka9dnbi";                    // Secret Key
 input double   InpInitialBalance = 10000.0;                          // ทุนเริ่มต้น (Initial Balance)
 input int      InpTimerInterval  = 60;                               // ส่งข้อมูลทุกๆ (วินาที)
 
@@ -104,8 +104,19 @@ color    g_labelColor[DASH_LINES];
 //+------------------------------------------------------------------+
 //| Helpers                                                          |
 //+------------------------------------------------------------------+
-string IsoTime(datetime t)
+//+------------------------------------------------------------------+
+//| ประเภทบัญชี: real / demo / contest (ให้ server แยกข้อมูลไม่ให้ปนกัน) |
+//+------------------------------------------------------------------+
+string AccountTypeStr()
   {
+   long mode = AccountInfoInteger(ACCOUNT_TRADE_MODE);
+   if(mode == ACCOUNT_TRADE_MODE_REAL)    return("real");
+   if(mode == ACCOUNT_TRADE_MODE_DEMO)    return("demo");
+   if(mode == ACCOUNT_TRADE_MODE_CONTEST) return("contest");
+   return("unknown");
+  }
+
+string IsoTime(datetime t)  {
    if(t <= 0)
       return("");
    MqlDateTime dt;
@@ -532,7 +543,7 @@ void RefreshLabels(datetime now, bool force)
    else
       t[9] = "Stats Since: All-Time";
 
-   t[10] = "Sent: " + g_sendStatus;
+   t[10] = AccountTypeStr() + " | Sent: " + g_sendStatus;
 
    bool changed = false;
    for(int i = 0; i < DASH_LINES; i++)
@@ -651,6 +662,7 @@ void SendAccountData()
    s += "\"withdrawal\":" + DoubleToString(g_withdrawalTotal, 2) + ",";
    s += "\"net_deposit\":" + DoubleToString(g_depositTotal, 2) + ",";
    s += "\"timestamp\":\"" + IsoTime(now) + "\"";
+   s += ",\"account_type\":\"" + AccountTypeStr() + "\"";
 
    if(InpSendExtended)
      {
@@ -740,7 +752,7 @@ int OnInit()
    g_lastSendMs = GetTickCount();
    EventSetTimer(1);   // timer เดียว: realtime DD + UI, ส่ง server ตามรอบใน OnTimer
 
-   Print("MT5_DataSender v2.00 ready | send every ", InpTimerInterval, "s | dashboard=", InpShowDashboard);
+   Print("MT5_DataSender v2.01 ready | send every ", InpTimerInterval, "s | type=", AccountTypeStr(), " | dashboard=", InpShowDashboard);
    return(INIT_SUCCEEDED);
   }
 

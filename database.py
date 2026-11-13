@@ -3,6 +3,7 @@ import pytz
 from typing import Dict
 from pydantic import BaseModel
 import os
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -44,6 +45,7 @@ async def init_db(conn: asyncpg.Connection):
             initial_balance DOUBLE PRECISION DEFAULT 10000.0,
             note            TEXT DEFAULT '',
             active          INTEGER DEFAULT 1,
+            account_type    TEXT DEFAULT 'unknown',
             created_at      TIMESTAMPTZ DEFAULT NOW()
         )
     """)
@@ -92,6 +94,7 @@ async def init_db(conn: asyncpg.Connection):
             dd_total_at     TEXT,
             dd_total_lots   DOUBLE PRECISION,
             stats_start     TEXT,
+            account_type    TEXT DEFAULT 'unknown',
             ts              TEXT NOT NULL,
             received_at     TIMESTAMPTZ DEFAULT NOW()
         )
@@ -116,8 +119,12 @@ async def init_db(conn: asyncpg.Connection):
         ("dd_week", "DOUBLE PRECISION"), ("dd_week_at", "TEXT"), ("dd_week_lots", "DOUBLE PRECISION"),
         ("dd_total", "DOUBLE PRECISION"), ("dd_total_at", "TEXT"), ("dd_total_lots", "DOUBLE PRECISION"),
         ("stats_start", "TEXT"),
+        ("account_type", "TEXT DEFAULT 'unknown'"),
     ]:
         migrations.append(("snapshots", col, col_def))
+
+    # accounts.account_type (แยกบัญชีจริง/ทดลอง)
+    migrations.append(("accounts", "account_type", "TEXT DEFAULT 'unknown'"))
     for table, col, col_def in migrations:
         exists = await conn.fetchval(
             "SELECT COUNT(*) FROM information_schema.columns WHERE table_name=$1 AND column_name=$2",
@@ -202,6 +209,7 @@ _EXT_COLS = [
     "dd_week", "dd_week_at", "dd_week_lots",
     "dd_total", "dd_total_at", "dd_total_lots",
     "stats_start",
+    "account_type",
 ]
 
 async def warm_latest_cache():
@@ -222,7 +230,7 @@ async def warm_latest_cache():
                    s.open_orders, s.buy_orders, s.sell_orders, s.total_lots, s.buy_lots, s.sell_lots,
                    s.withdrawal, s.net_deposit, s.ts, s.received_at,
                    {ext},
-                   a.display_name, a.active, a.leverage, a.currency, a.broker, a.server
+                   a.display_name, a.active, a.leverage, a.currency, a.broker, a.server, a.account_type
             FROM snapshots s
             LEFT JOIN accounts a ON a.alias = s.alias
             ORDER BY s.alias, s.ts DESC
@@ -237,10 +245,33 @@ async def warm_latest_cache():
         d["active"]       = d.get("active") if d.get("active") is not None else 1
         d["leverage"]     = d.get("leverage") or 100
         d["currency"]     = d.get("currency") or "USD"
+        d["account_type"] = d.get("account_type") or "unknown"
         d["_warm"]        = True
         latest_cache[d["alias"]] = d
 
     print(f"[DB] warm latest_cache: {len(rows)} accounts")
+
+# ---- ประเภทบัญชี (real / demo / contest) -------------------------------
+# ใช้แยกข้อมูลบัญชีจริงกับบัญชีทดลองไม่ให้ปนกัน (cache 60 วิ)
+_type_cache = {"ts": 0.0, "map": {}}
+
+async def get_account_types(force: bool = False) -> Dict[str, str]:
+    """คืน map alias -> account_type"""
+    now = time.time()
+    if not force and _type_cache["map"] and (now - _type_cache["ts"] < 60):
+        return _type_cache["map"]
+    if pool is None:
+        return {}
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT alias, account_type FROM accounts")
+    m = {r["alias"]: (r["account_type"] or "unknown") for r in rows}
+    _type_cache["ts"]  = now
+    _type_cache["map"] = m
+    return m
+
+def invalidate_account_types():
+    _type_cache["ts"]  = 0.0
+    _type_cache["map"] = {}
 
 async def close_db_pool():
     global pool

@@ -140,8 +140,8 @@ last_alltime_update = None
 cached_alltime_summary = []
 
 @router.get("/api/alltime")
-async def get_alltime_all():
-    """สถิติ all-time ของทุก account สำหรับแสดงบน overview"""
+async def get_alltime_all(mode: str = Query(None, description="real | demo | contest | all")):
+    """สถิติ all-time ของทุก account สำหรับแสดงบน overview (กรองตามประเภทบัญชีได้)"""
     global last_alltime_update, cached_alltime_summary
     now = datetime.now(db.TZ_BANGKOK)
 
@@ -175,6 +175,17 @@ async def get_alltime_all():
                 "profit":       db.latest_cache[s_copy["alias"]]["profit"],
             })
         result.append(s_copy)
+
+    # กรองตามประเภทบัญชี (real / demo / contest) เพื่อไม่ให้สถิติปนกัน
+    m = (mode or "").strip().lower()
+    if m in {"real", "demo", "contest"}:
+        types = await db.get_account_types()
+        result = [
+            r for r in result
+            if ((db.latest_cache.get(r["alias"], {}).get("account_type")
+                 or types.get(r["alias"], "unknown")) == m)
+        ]
+
     return result
 
 @router.get("/api/pnl/calendar/{alias}")

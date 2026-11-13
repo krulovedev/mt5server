@@ -14,8 +14,16 @@ EXT_COLS = [
     "dd_week", "dd_week_at", "dd_week_lots",
     "dd_total", "dd_total_at", "dd_total_lots",
     "stats_start",
+    "account_type",
 ]
 BASE_PLACEHOLDERS = 22   # จำนวนค่าพื้นฐานก่อนคอลัมน์เสริม (ts คือ $22)
+
+VALID_TYPES = {"real", "demo", "contest"}
+
+def normalize_account_type(v) -> str:
+    """EA ส่ง 'real' / 'demo' / 'contest' มา — ค่าอื่นถือเป็น unknown"""
+    s = (v or "").strip().lower()
+    return s if s in VALID_TYPES else "unknown"
 
 @router.post("/api/data")
 async def receive_data(payload: MT5DataPayload):
@@ -29,6 +37,9 @@ async def receive_data(payload: MT5DataPayload):
             f"(server keys len={[len(k) for k in db.SECRET_KEYS]})"
         )
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+    acc_type = normalize_account_type(payload.account_type)
+    payload.account_type = acc_type
 
     ts = payload.timestamp or datetime.now(db.TZ_BANGKOK).strftime('%Y-%m-%dT%H:%M:%S')
     ts = ts.replace('.', '-').replace(' ', 'T')
@@ -44,18 +55,19 @@ async def receive_data(payload: MT5DataPayload):
 
             # Upsert account info (ไม่อัพเดท display_name)
             await conn.execute("""
-                INSERT INTO accounts (alias, account_number, broker, server, currency, leverage, initial_balance)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO accounts (alias, account_number, broker, server, currency, leverage, initial_balance, account_type)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 ON CONFLICT (alias) DO UPDATE SET
                     account_number = EXCLUDED.account_number,
                     broker         = EXCLUDED.broker,
                     server         = EXCLUDED.server,
                     currency       = EXCLUDED.currency,
-                    leverage       = EXCLUDED.leverage
+                    leverage       = EXCLUDED.leverage,
+                    account_type   = EXCLUDED.account_type
             """,
                 payload.alias, payload.account_number, payload.broker,
                 payload.server, payload.currency, payload.leverage,
-                payload.initial_balance
+                payload.initial_balance, acc_type
             )
 
             # Insert snapshot
@@ -133,5 +145,13 @@ async def receive_data(payload: MT5DataPayload):
     # เพิ่มสถิติชุดใหม่ (EA v2.0) เข้า cache เพื่อให้ /api/latest ตอบได้ทันที
     for c in EXT_COLS:
         db.latest_cache[payload.alias][c] = getattr(payload, c)
+
+    # ถ้าประเภทบัญชีเปลี่ยน (เช่น EA เพิ่งอัปเดต) ให้ล้าง cache ที่ใช้กรอง real/demo
+    try:
+        types = await db.get_account_types()
+        if types.get(payload.alias) != acc_type:
+            db.invalidate_account_types()
+    except Exception:
+        pass
 
     return {"status": "ok", "alias": payload.alias}

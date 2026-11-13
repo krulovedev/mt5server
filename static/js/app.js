@@ -5,6 +5,35 @@ const API = '';
     let refreshTimer = 30;
     let countdownInterval;
     let latestAccountsCache = {}; // เก็บข้อมูล latest แต่ละ account
+    let currentTab = 'overview';
+
+    // === แยกบัญชีจริง / ทดลอง ===
+    const MODES = ['real','demo','all'];
+    let acctMode = (localStorage.getItem('acctMode') || 'real');
+    if(!MODES.includes(acctMode)) acctMode = 'real';
+
+    function apiQs(){
+      return acctMode === 'all' ? '' : ('?mode=' + encodeURIComponent(acctMode));
+    }
+
+    function updateModeButtons(){
+      document.querySelectorAll('.mode-btn').forEach(b=>{
+        b.classList.toggle('active', b.dataset.mode === acctMode);
+      });
+      const lbl = $('mode-label');
+      if(lbl) lbl.textContent = acctMode === 'real' ? 'บัญชีจริง' : (acctMode === 'demo' ? 'บัญชีทดลอง' : 'ทุกบัญชี');
+    }
+
+    function setAcctMode(m){
+      if(!MODES.includes(m)) return;
+      acctMode = m;
+      localStorage.setItem('acctMode', m);
+      updateModeButtons();
+      selectedAlias = null;
+      const dp = $('detail-panel'); if(dp) dp.style.display = 'none';
+      latestAccountsCache = {};
+      if(window.onTabLoaded) window.onTabLoaded(currentTab || 'overview');
+    }
 
     const $ = id => document.getElementById(id);
     const fmt = (n, d=2) => n==null?'—':(+n).toFixed(d);
@@ -108,6 +137,7 @@ const API = '';
     startCountdown();
 
     window.onTabLoaded = async function(name) {
+      currentTab = name;
       if(name==='overview') loadOverview();
       if(name==='settings') loadSettings();
       if(name==='detail'||name==='history'||name==='pnl') {
@@ -134,7 +164,7 @@ const API = '';
       // 1. Fetch only /api/latest (now extremely fast) to render cards instantly
       let allAccounts=[];
       try {
-        const res=await fetch(API+'/api/latest');
+        const res=await fetch(API+'/api/latest'+apiQs());
         allAccounts=await res.json();
       } catch(e) {}
       
@@ -142,7 +172,8 @@ const API = '';
 
       // Render account cards immediately
       if(!accounts.length){
-        grid.innerHTML=`<div class="empty"><h2>ยังไม่มี Account</h2><p>รอข้อมูลจาก MT5 EA...</p></div>`;
+        const modeTxt = acctMode==='real' ? 'บัญชีจริง (Real)' : acctMode==='demo' ? 'บัญชีทดลอง (Demo)' : 'บัญชี';
+        grid.innerHTML=`<div class="empty"><h2>ยังไม่มี${modeTxt}</h2><p>รอข้อมูลจาก MT5 EA...<br>หรือสลับโหมดมุมขวาบนเพื่อดูบัญชีประเภทอื่น</p></div>`;
       } else {
         grid.innerHTML='';
         accounts.sort((a,b)=>(a.display_name||a.alias).localeCompare(b.display_name||b.alias));
@@ -154,6 +185,11 @@ const API = '';
           const eDDColor_=ddColor(eDD);
           const profitClass=acc.profit>=0?'positive':'negative';
           const status=getStatus(acc.received_at);
+          const accType=acc.account_type||'unknown';
+          const typeBadge = accType==='real' ? '<span class="acc-badge real" title="บัญชีจริง">REAL</span>'
+                          : accType==='demo' ? '<span class="acc-badge demo" title="บัญชีทดลอง">DEMO</span>'
+                          : accType==='contest' ? '<span class="acc-badge contest">CONTEST</span>'
+                          : '<span class="acc-badge unknown" title="ยังไม่ทราบประเภท">?</span>';
           const card=document.createElement('div');
           card.className='account-card'+(selectedAlias===acc.alias?' selected':'');
           card.onclick=()=>selectAccount(acc.alias,card);
@@ -179,7 +215,7 @@ const API = '';
           card.innerHTML=`
         <div class="card-header">
           <div>
-            <div class="account-name">${acc.display_name||acc.alias}</div>
+            <div class="account-name">${typeBadge} ${acc.display_name||acc.alias}</div>
             <div class="account-num">${acc.alias} · #${acc.account_number} · ${acc.broker||'—'} · 1:${acc.leverage}</div>
           </div>
           <div class="status-dot ${status}"></div>
@@ -220,7 +256,7 @@ const API = '';
       }
 
       // 1.5. Fetch /api/realized-profits asynchronously and update realized profits
-      fetch(API+'/api/realized-profits').then(r=>r.json()).then(stats=>{
+      fetch(API+'/api/realized-profits'+apiQs()).then(r=>r.json()).then(stats=>{
         for(let alias in stats){
           const s = stats[alias];
           // เก็บ net_withdrawal + baseline_withdrawal ลง cache เพื่อให้ chart/table ใช้ได้
@@ -246,7 +282,7 @@ const API = '';
       }).catch(e=>console.error('Failed to load realized stats',e));
 
       // 2. Fetch /api/alltime asynchronously and update the banner later
-      fetch(API+'/api/alltime').then(r=>r.json()).then(atData => {
+      fetch(API+'/api/alltime'+apiQs()).then(r=>r.json()).then(atData => {
         const activeAliases=new Set(accounts.map(a=>a.alias));
         const activeAtData=atData.filter(d=>activeAliases.has(d.alias));
         if(activeAtData.length && $('alltime-banner') && $('alltime-grid')){
@@ -517,7 +553,7 @@ const API = '';
     }
 
     async function loadSettings() {
-      const res=await fetch(API+'/api/accounts');
+      const res=await fetch(API+'/api/accounts'+apiQs());
       const accounts=await res.json();
       const wrap=$('settings-content');
       if(!accounts.length){wrap.innerHTML='<div class="empty"><p>ยังไม่มี Account ที่ส่งข้อมูลมา</p></div>';return;}
@@ -535,6 +571,14 @@ const API = '';
       </div>
       <div class="form-row"><label>Account Number</label>
         <input type="text" value="${acc.account_number||''}" disabled style="opacity:.5">
+      </div>
+      <div class="form-row"><label>ประเภทบัญชี</label>
+        <select id="at-${acc.alias}">
+          <option value="real" ${acc.account_type==='real'?'selected':''}>🟢 บัญชีจริง (Real)</option>
+          <option value="demo" ${acc.account_type==='demo'?'selected':''}>🟡 บัญชีทดลอง (Demo)</option>
+          <option value="contest" ${acc.account_type==='contest'?'selected':''}>🔵 Contest</option>
+          <option value="unknown" ${(!acc.account_type||acc.account_type==='unknown')?'selected':''}>⚪ ยังไม่ทราบ</option>
+        </select>
       </div>
       <div class="form-row"><label>Broker / Server</label>
         <input type="text" value="${acc.broker||''} / ${acc.server||''}" disabled style="opacity:.5">
@@ -564,12 +608,15 @@ const API = '';
     async function saveSettings(alias) {
       const ib=parseFloat($('ib-'+alias).value)||10000;
       const note=$('note-'+alias).value;
-      await fetch(`${API}/api/accounts/${alias}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({alias,initial_balance:ib,note})});
+      const atEl=$('at-'+alias);
+      const payload={alias,initial_balance:ib,note};
+      if(atEl) payload.account_type=atEl.value;
+      await fetch(`${API}/api/accounts/${alias}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
       showToast('✓ บันทึกการตั้งค่าแล้ว');
     }
 
     async function populateAccountSelects() {
-      const res=await fetch(API+'/api/accounts');
+      const res=await fetch(API+'/api/accounts'+apiQs());
       const accounts=await res.json();
       const opts=accounts.map(a=>`<option value="${a.alias}">${a.display_name||a.alias}</option>`).join('');
       ['detail-account-sel','hist-account-sel','pnl-account-sel'].forEach(id=>{
@@ -597,7 +644,7 @@ const API = '';
           ?'<span style="color:var(--green)">✅ Bot Token ตั้งค่าแล้ว</span>'
           :'<span style="color:var(--yellow)">⚠️ ยังไม่ได้ตั้งค่า Bot Token</span>';
 
-        const accs=await (await fetch(API+'/api/latest')).json();
+        const accs=await (await fetch(API+'/api/latest'+apiQs())).json();
         const accSettings=s.account_settings||{};
         const wrap=$('account-alert-settings');
         const active=accs.filter(a=>a.active!==0);

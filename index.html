@@ -9,8 +9,13 @@
 </head>
 <body>
   <header>
-    <div class="logo" onclick="window.location.reload()" style="cursor: pointer;" title="Reload Page">MT5 MONITOR v1.4</div>
+    <div class="logo" onclick="window.location.reload()" style="cursor: pointer;" title="Reload Page">MT5 MONITOR v1.5</div>
     <div class="header-right">
+      <div class="mode-switch" id="mode-switch">
+        <button class="mode-btn" data-mode="real" onclick="setAcctMode('real')">🟢 จริง</button>
+        <button class="mode-btn" data-mode="demo" onclick="setAcctMode('demo')">🟡 ทดลอง</button>
+        <button class="mode-btn" data-mode="all"  onclick="setAcctMode('all')">ทั้งหมด</button>
+      </div>
       <div id="clock">--:--:--</div>
       <div id="server-status" style="color: var(--muted);">WAITING</div>
     </div>
@@ -33,11 +38,11 @@
 
   <div id="toast" class="toast"></div>
 
-  <script src="/static/js/app.js?v=1.4"></script>
+  <script src="/static/js/app.js?v=1.5"></script>
   <script>
     // SPA Loader Logic
     async function loadTabHTML(tabId) {
-        const res = await fetch('/tabs/' + tabId + '.html?v=1.4');
+        const res = await fetch('/tabs/' + tabId + '.html?v=1.5');
         return await res.text();
     }
     

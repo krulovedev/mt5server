@@ -1,14 +1,28 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 import database as db
 from models import AccountConfig, AccountRename
 
 router = APIRouter()
 
+# โหมดการแยกบัญชี: real | demo | contest (ไม่ระบุ/ all = ทั้งหมด)
+VALID_MODES = {"real", "demo", "contest"}
+
+def _mode_filter(mode):
+    """คืนค่า mode ที่ถูกต้อง หรือ None ถ้าไม่ต้องกรอง"""
+    m = (mode or "").strip().lower()
+    return m if m in VALID_MODES else None
+
 @router.get("/api/accounts")
-async def get_accounts():
-    """รายชื่อ accounts ทั้งหมด"""
+async def get_accounts(mode: str = Query(None, description="real | demo | contest | all")):
+    """รายชื่อ accounts ทั้งหมด (กรองตามประเภทบัญชีได้)"""
+    m = _mode_filter(mode)
     async with db.pool.acquire() as conn:
-        rows = await conn.fetch("SELECT * FROM accounts ORDER BY alias")
+        if m:
+            rows = await conn.fetch(
+                "SELECT * FROM accounts WHERE account_type = $1 ORDER BY alias", m
+            )
+        else:
+            rows = await conn.fetch("SELECT * FROM accounts ORDER BY alias")
     return [dict(r) for r in rows]
 
 from datetime import datetime, timedelta
@@ -17,10 +31,17 @@ last_bals_update = None
 cached_historical = {}
 
 @router.get("/api/latest")
-async def get_latest():
-    """ข้อมูลล่าสุดของทุก account สำหรับ overview (Fast)"""
+async def get_latest(mode: str = Query(None, description="real | demo | contest | all")):
+    """ข้อมูลล่าสุดของทุก account สำหรับ overview (Fast) — กรองตามประเภทบัญชีได้"""
+    m = _mode_filter(mode)
+    types = await db.get_account_types() if m else None
+
     result = []
     for alias, data in db.latest_cache.items():
+        if m:
+            acc_type = data.get("account_type") or types.get(alias, "unknown")
+            if acc_type != m:
+                continue
         entry = dict(data)
         # ไม่คำนวณ realized เพื่อให้ response เร็วที่สุด frontend จะดึงแยกทีหลัง
         entry["realized_today"] = None
@@ -30,11 +51,20 @@ async def get_latest():
     return result
 
 @router.get("/api/realized-profits")
-async def get_stats_realized():
+async def get_stats_realized(mode: str = Query(None, description="real | demo | contest | all")):
     """คำนวณกำไร realized โดยใช้ snapshot แรกสุดในฐานข้อมูลเป็น baseline (ไม่นับก่อนเริ่มบันทึก)"""
     global last_bals_update, cached_historical
     now = datetime.now(db.TZ_BANGKOK)
-    
+
+    m = _mode_filter(mode)
+    types = await db.get_account_types() if m else {}
+
+    def _allowed(alias):
+        if not m:
+            return True
+        t = db.latest_cache[alias].get("account_type") or types.get(alias, "unknown")
+        return t == m
+
     if last_bals_update is None or (now - last_bals_update).total_seconds() > 300:
         async with db.pool.acquire() as conn:
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%dT%H:%M:%S')
@@ -43,6 +73,8 @@ async def get_stats_realized():
             
             new_cache = {}
             for alias in db.latest_cache.keys():
+                if not _allowed(alias):
+                    continue
                 current_w = db.latest_cache[alias].get("withdrawal", 0.0) or 0.0
                 current_d = db.latest_cache[alias].get("net_deposit", 0.0) or 0.0
                 
@@ -122,6 +154,8 @@ async def get_stats_realized():
             
     result = {}
     for alias, data in db.latest_cache.items():
+        if not _allowed(alias):
+            continue
         hist = cached_historical.get(alias, {})
         
         current_bal        = data.get("balance", 0.0)
@@ -179,8 +213,18 @@ async def update_account(alias: str, config: AccountConfig):
             "UPDATE accounts SET initial_balance=$1, note=$2 WHERE alias=$3",
             config.initial_balance, config.note, alias
         )
+        if config.account_type:
+            from routers.data import normalize_account_type
+            t = normalize_account_type(config.account_type)
+            await conn.execute(
+                "UPDATE accounts SET account_type=$1 WHERE alias=$2", t, alias
+            )
+            db.invalidate_account_types()
     if alias in db.latest_cache:
         db.latest_cache[alias]["initial_balance"] = config.initial_balance
+        if config.account_type:
+            from routers.data import normalize_account_type
+            db.latest_cache[alias]["account_type"] = normalize_account_type(config.account_type)
     return {"status": "updated", "alias": alias}
 
 @router.put("/api/accounts/{alias}/rename")
