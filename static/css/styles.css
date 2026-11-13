@@ -523,4 +523,37 @@
         justify-content: space-between;
         margin-top: 6px;
       }
-    }
+    }
+/* ===== MT5 EA stats (Max Drawdown จาก floating loss) ===== */
+.mt5dd-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 10px 0 2px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .18);
+}
+.mt5dd-item { min-width: 0; }
+.mt5dd-label {
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mt5dd-label span { color: #3f5675; text-transform: none; }
+.mt5dd-val { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mt5dd-sub {
+  font-size: 9px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 480px) {
+  .mt5dd-grid { grid-template-columns: 1fr; }
+}

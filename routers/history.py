@@ -5,6 +5,21 @@ import database as db
 
 router = APIRouter()
 
+# คอลัมน์ที่ API ยอมให้ดึงได้ (รวมสถิติชุดใหม่จาก EA v2.0)
+ALLOWED_FIELDS = {
+    "balance","equity","margin","free_margin","margin_level","profit",
+    "drawdown_amount","drawdown_pct","equity_dd_pct","open_orders",
+    "buy_orders","sell_orders","total_lots","buy_lots","sell_lots","ts","withdrawal",
+    "net_deposit",
+    "pl_today","pl_week","pl_total",
+    "closed_pl_today","closed_pl_week","closed_pl_total",
+    "vol_today","vol_week","vol_total",
+    "dd_today","dd_today_at","dd_today_lots",
+    "dd_week","dd_week_at","dd_week_lots",
+    "dd_total","dd_total_at","dd_total_lots",
+    "stats_start",
+}
+
 @router.get("/api/history/{alias}")
 async def get_history(
     alias: str,
@@ -19,9 +34,7 @@ async def get_history(
     if not start:
         start = (datetime.now(db.TZ_BANGKOK) - timedelta(hours=24)).strftime('%Y-%m-%dT%H:%M:%S')
 
-    allowed = {"balance","equity","margin","free_margin","margin_level","profit",
-               "drawdown_amount","drawdown_pct","equity_dd_pct","open_orders",
-               "buy_orders","sell_orders","total_lots","buy_lots","sell_lots","ts","withdrawal"}
+    allowed = ALLOWED_FIELDS
     fields = [f for f in field.split(",") if f.strip() in allowed]
     if not fields:
         fields = ["balance","equity","drawdown_pct","profit","ts"]
@@ -44,9 +57,7 @@ async def get_history_all(
     field: str = Query("balance,equity,drawdown_pct,profit,open_orders,total_lots,ts")
 ):
     """ดึงข้อมูลทั้งหมดตั้งแต่ต้น (all-time chart)"""
-    allowed = {"balance","equity","margin","free_margin","margin_level","profit",
-               "drawdown_amount","drawdown_pct","equity_dd_pct","open_orders",
-               "buy_orders","sell_orders","total_lots","buy_lots","sell_lots","ts","withdrawal"}
+    allowed = ALLOWED_FIELDS
     fields = [f for f in field.split(",") if f.strip() in allowed]
     if not fields:
         fields = ["balance","equity","drawdown_pct","profit","ts"]

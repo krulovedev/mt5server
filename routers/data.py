@@ -5,6 +5,18 @@ from models import MT5DataPayload
 
 router = APIRouter()
 
+# คอลัมน์สถิติชุดใหม่จาก EA v2.0 (ถ้า EA เก่าส่งมาไม่ครบ จะเป็น NULL)
+EXT_COLS = [
+    "pl_today", "pl_week", "pl_total",
+    "closed_pl_today", "closed_pl_week", "closed_pl_total",
+    "vol_today", "vol_week", "vol_total",
+    "dd_today", "dd_today_at", "dd_today_lots",
+    "dd_week", "dd_week_at", "dd_week_lots",
+    "dd_total", "dd_total_at", "dd_total_lots",
+    "stats_start",
+]
+BASE_PLACEHOLDERS = 22   # จำนวนค่าพื้นฐานก่อนคอลัมน์เสริม (ts คือ $22)
+
 @router.post("/api/data")
 async def receive_data(payload: MT5DataPayload):
     """รับข้อมูลจาก MQL5 EA"""
@@ -40,20 +52,27 @@ async def receive_data(payload: MT5DataPayload):
             )
 
             # Insert snapshot
-            await conn.execute("""
+            ext_cols  = ", ".join(EXT_COLS)
+            ext_marks = ", ".join(f"${BASE_PLACEHOLDERS + i}" for i in range(1, len(EXT_COLS) + 1))
+            ext_vals  = [getattr(payload, c) for c in EXT_COLS]
+
+            await conn.execute(f"""
                 INSERT INTO snapshots
                     (alias, account_number, balance, equity, margin, free_margin, margin_level,
                      profit, credit, initial_balance, drawdown_amount, drawdown_pct, equity_dd_pct,
-                     open_orders, buy_orders, sell_orders, total_lots, buy_lots, sell_lots, withdrawal, net_deposit, ts)
+                     open_orders, buy_orders, sell_orders, total_lots, buy_lots, sell_lots, withdrawal, net_deposit, ts,
+                     {ext_cols})
                 VALUES
-                    ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+                    ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,
+                     {ext_marks})
             """,
                 payload.alias, payload.account_number,
                 payload.balance, payload.equity, payload.margin, payload.free_margin,
                 payload.margin_level, payload.profit, payload.credit, payload.initial_balance,
                 payload.drawdown_amount, payload.drawdown_pct, payload.equity_drawdown_pct,
                 payload.open_orders, payload.buy_orders, payload.sell_orders, payload.total_lots,
-                payload.buy_lots, payload.sell_lots, payload.withdrawal, payload.net_deposit, ts
+                payload.buy_lots, payload.sell_lots, payload.withdrawal, payload.net_deposit, ts,
+                *ext_vals
             )
 
             # ลบข้อมูลเก่าเกิน MAX_HISTORY ต่อ account
@@ -103,5 +122,9 @@ async def receive_data(payload: MT5DataPayload):
         "received_at":     datetime.now(db.TZ_BANGKOK).strftime('%Y-%m-%dT%H:%M:%S'),
         "active":          active,
     }
+
+    # เพิ่มสถิติชุดใหม่ (EA v2.0) เข้า cache เพื่อให้ /api/latest ตอบได้ทันที
+    for c in EXT_COLS:
+        db.latest_cache[payload.alias][c] = getattr(payload, c)
 
     return {"status": "ok", "alias": payload.alias}

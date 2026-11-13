@@ -157,6 +157,25 @@ const API = '';
           const card=document.createElement('div');
           card.className='account-card'+(selectedAlias===acc.alias?' selected':'');
           card.onclick=()=>selectAccount(acc.alias,card);
+          const hasExt = (acc.dd_today!=null || acc.dd_week!=null || acc.dd_total!=null);
+          const extBlock = hasExt ? `
+        <div class="mt5dd-grid">
+          <div class="mt5dd-item">
+            <div class="mt5dd-label">DD Today <span>(floating)</span></div>
+            <div class="mt5dd-val" style="color:var(--red)">${acc.dd_today==null?'—':fmt(acc.dd_today)}</div>
+            <div class="mt5dd-sub">${acc.dd_today_lots==null?'—':fmt(acc.dd_today_lots,2)+' lots'}${acc.dd_today_at?' · '+fmtDate(acc.dd_today_at):''}</div>
+          </div>
+          <div class="mt5dd-item">
+            <div class="mt5dd-label">DD Week <span>(floating)</span></div>
+            <div class="mt5dd-val" style="color:var(--red)">${acc.dd_week==null?'—':fmt(acc.dd_week)}</div>
+            <div class="mt5dd-sub">${acc.dd_week_lots==null?'—':fmt(acc.dd_week_lots,2)+' lots'}${acc.dd_week_at?' · '+fmtDate(acc.dd_week_at):''}</div>
+          </div>
+          <div class="mt5dd-item">
+            <div class="mt5dd-label">DD Total <span>(floating)</span></div>
+            <div class="mt5dd-val" style="color:var(--red)">${acc.dd_total==null?'—':fmt(acc.dd_total)}</div>
+            <div class="mt5dd-sub">${acc.dd_total_lots==null?'—':fmt(acc.dd_total_lots,2)+' lots'}${acc.dd_total_at?' · '+fmtDate(acc.dd_total_at):''}</div>
+          </div>
+        </div>` : '';
           card.innerHTML=`
         <div class="card-header">
           <div>
@@ -188,6 +207,7 @@ const API = '';
           <div class="dd-bar-label" style="margin-top:6px"><span>Eq DD <span style="font-size:9px;color:var(--muted)">(floating)</span></span><span style="color:${eDDColor_}">${fmt(eDD,2)}%</span></div>
           <div class="dd-bar-bg"><div class="dd-bar-fill" style="width:${Math.min(eDD,100)}%;background:${eDDColor_}"></div></div>
         </div>
+        ${extBlock}
         <div class="card-footer">อัพเดท: ${fmtDate(acc.received_at)}</div>
         <div class="card-actions">
           <button class="icon-btn" onclick="event.stopPropagation();showRenameModal('${acc.alias}','${(acc.display_name||acc.alias).replace(/'/g,"&#39;")}')">✏️ ตั้งชื่อ</button>
@@ -295,6 +315,7 @@ const API = '';
       $('dp-title').textContent=selectedAlias+(detailHours===0?' (ALL TIME)':'');
 
       const strip=$('stats-strip');
+      const la=latestAccountsCache[selectedAlias]||{};
       const sb=(l,v,c)=>`<div class="stat-box"><div class="label">${l}</div><div class="val"${c?' style="color:'+c+'"':''}>${v}</div></div>`;
       const sbAt=(l,v,c)=>`<div class="stat-box" style="border:1px solid #1e4a6e"><div class="label" style="color:var(--accent)">&#127942; ${l}</div><div class="val"${c?' style="color:'+c+'"':''}>${v}</div></div>`;
       strip.innerHTML=
@@ -310,6 +331,10 @@ const API = '';
         sb('Max Orders',stats.max_open_orders||0)+
         sb('Avg Margin Lv',fmt(stats.avg_margin_level)+'%')+
         sb('Snapshots',hist.count||0)+
+        sb('DD Today (floating)',la.dd_today==null?'—':fmt(la.dd_today),'var(--red)')+
+        sb('DD Week (floating)',la.dd_week==null?'—':fmt(la.dd_week),'var(--red)')+
+        sb('DD Total (floating)',la.dd_total==null?'—':fmt(la.dd_total),'var(--red)')+
+        sb('Stats Since',la.stats_start?fmtDate(la.stats_start):'All-Time','var(--muted)')+
         sb('Total Withdrawal',fmt(latestAccountsCache[selectedAlias]?.net_withdrawal??latestAccountsCache[selectedAlias]?.withdrawal??0),'var(--yellow)')+
         sb('Total Deposit',fmt(latestAccountsCache[selectedAlias]?.net_deposit_since??latestAccountsCache[selectedAlias]?.net_deposit??0),'var(--accent)')+
         sbAt('All-Time Max DD',fmt(at.max_drawdown_pct)+'%','var(--red)')+

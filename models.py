@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Optional
 
 class MT5DataPayload(BaseModel):
     secret:             str
@@ -28,6 +29,30 @@ class MT5DataPayload(BaseModel):
     withdrawal:         float     = 0.0
     net_deposit:        float     = 0.0
     timestamp:          str       = ""
+
+    # --- สถิติชุดใหม่ (EA v2.0 / AccountDashboardPro) ---
+    # P/L = closed + floating (ตามมุมมองของ EA)
+    pl_today:           Optional[float] = None
+    pl_week:            Optional[float] = None
+    pl_total:           Optional[float] = None
+    closed_pl_today:    Optional[float] = None
+    closed_pl_week:     Optional[float] = None
+    closed_pl_total:    Optional[float] = None
+    # volume ที่ใช้ผลิต P/L (closed lots + lots ที่เปิดอยู่)
+    vol_today:          Optional[float] = None
+    vol_week:           Optional[float] = None
+    vol_total:          Optional[float] = None
+    # Max drawdown จาก floating loss (ไม่ใช่ balance DD)
+    dd_today:           Optional[float] = None
+    dd_today_at:        Optional[str]   = None
+    dd_today_lots:      Optional[float] = None
+    dd_week:            Optional[float] = None
+    dd_week_at:         Optional[str]   = None
+    dd_week_lots:       Optional[float] = None
+    dd_total:           Optional[float] = None
+    dd_total_at:        Optional[str]   = None
+    dd_total_lots:      Optional[float] = None
+    stats_start:        Optional[str]   = None
 
 class AccountConfig(BaseModel):
     alias:           str

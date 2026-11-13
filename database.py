@@ -73,6 +73,25 @@ async def init_db(conn: asyncpg.Connection):
             sell_lots       DOUBLE PRECISION DEFAULT 0.0,
             withdrawal      DOUBLE PRECISION DEFAULT 0.0,
             net_deposit     DOUBLE PRECISION DEFAULT 0.0,
+            pl_today        DOUBLE PRECISION,
+            pl_week         DOUBLE PRECISION,
+            pl_total        DOUBLE PRECISION,
+            closed_pl_today DOUBLE PRECISION,
+            closed_pl_week  DOUBLE PRECISION,
+            closed_pl_total DOUBLE PRECISION,
+            vol_today       DOUBLE PRECISION,
+            vol_week        DOUBLE PRECISION,
+            vol_total       DOUBLE PRECISION,
+            dd_today        DOUBLE PRECISION,
+            dd_today_at     TEXT,
+            dd_today_lots   DOUBLE PRECISION,
+            dd_week         DOUBLE PRECISION,
+            dd_week_at      TEXT,
+            dd_week_lots    DOUBLE PRECISION,
+            dd_total        DOUBLE PRECISION,
+            dd_total_at     TEXT,
+            dd_total_lots   DOUBLE PRECISION,
+            stats_start     TEXT,
             ts              TEXT NOT NULL,
             received_at     TIMESTAMPTZ DEFAULT NOW()
         )
@@ -88,6 +107,17 @@ async def init_db(conn: asyncpg.Connection):
         ("snapshots", "net_deposit", "DOUBLE PRECISION DEFAULT 0.0"),
         ("accounts",  "display_name","TEXT DEFAULT ''"),
     ]
+    # คอลัมน์สถิติชุดใหม่ (EA v2.0)
+    for col, col_def in [
+        ("pl_today", "DOUBLE PRECISION"), ("pl_week", "DOUBLE PRECISION"), ("pl_total", "DOUBLE PRECISION"),
+        ("closed_pl_today", "DOUBLE PRECISION"), ("closed_pl_week", "DOUBLE PRECISION"), ("closed_pl_total", "DOUBLE PRECISION"),
+        ("vol_today", "DOUBLE PRECISION"), ("vol_week", "DOUBLE PRECISION"), ("vol_total", "DOUBLE PRECISION"),
+        ("dd_today", "DOUBLE PRECISION"), ("dd_today_at", "TEXT"), ("dd_today_lots", "DOUBLE PRECISION"),
+        ("dd_week", "DOUBLE PRECISION"), ("dd_week_at", "TEXT"), ("dd_week_lots", "DOUBLE PRECISION"),
+        ("dd_total", "DOUBLE PRECISION"), ("dd_total_at", "TEXT"), ("dd_total_lots", "DOUBLE PRECISION"),
+        ("stats_start", "TEXT"),
+    ]:
+        migrations.append(("snapshots", col, col_def))
     for table, col, col_def in migrations:
         exists = await conn.fetchval(
             "SELECT COUNT(*) FROM information_schema.columns WHERE table_name=$1 AND column_name=$2",

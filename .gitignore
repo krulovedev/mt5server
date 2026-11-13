@@ -23,3 +23,7 @@ venv/
 Thumbs.db
 .vscode/
 .idea/
+
+# MQL5 compiled
+*.ex5
+
