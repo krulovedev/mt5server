@@ -55,6 +55,8 @@ async def get_stats_realized(mode: str = Query(None, description="real | demo | 
     """คำนวณกำไร realized โดยใช้ snapshot แรกสุดในฐานข้อมูลเป็น baseline (ไม่นับก่อนเริ่มบันทึก)"""
     global last_bals_update, cached_historical
     now = datetime.now(db.TZ_BANGKOK)
+    now_utc = datetime.utcnow()
+    offsets = await db.get_broker_offsets()   # alias -> offset เวลา broker (วินาที)
 
     m = _mode_filter(mode)
     types = await db.get_account_types() if m else {}
@@ -70,12 +72,16 @@ async def get_stats_realized(mode: str = Query(None, description="real | demo | 
     missing = [a for a in db.latest_cache.keys() if a not in cached_historical]
     if last_bals_update is None or (now - last_bals_update).total_seconds() > 300 or missing:
         async with db.pool.acquire() as conn:
-            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%dT%H:%M:%S')
-            monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-            week_start = monday.strftime('%Y-%m-%dT%H:%M:%S')
-            
             new_cache = dict(cached_historical)
             for alias in db.latest_cache.keys():
+                # ขอบเขต Today/Week คำนวณด้วย "เวลา broker" ของบัญชีนั้น (ไม่ใช้เวลา Bangkok)
+                offset     = offsets.get(alias, 0)
+                broker_now = now_utc + timedelta(seconds=offset)
+                day_start  = broker_now.replace(hour=0, minute=0, second=0, microsecond=0)
+                week_start_dt = day_start - timedelta(days=broker_now.weekday())
+                today_start = day_start.strftime('%Y-%m-%dT%H:%M:%S')
+                week_start  = week_start_dt.strftime('%Y-%m-%dT%H:%M:%S')
+
                 current_w = db.latest_cache[alias].get("withdrawal", 0.0) or 0.0
                 current_d = db.latest_cache[alias].get("net_deposit", 0.0) or 0.0
                 

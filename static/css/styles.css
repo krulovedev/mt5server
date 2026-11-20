@@ -622,3 +622,20 @@ input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 4px; }
   color: var(--muted);
   letter-spacing: .5px;
 }
+
+/* ===== Legend ของปฏิทิน P&L ===== */
+.pnl-calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
+  padding: 8px 10px 2px;
+  font-size: 10.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.pnl-calendar-legend b { color: var(--text); font-weight: 600; }
+.pnl-calendar-legend .legend-note { color: #3f5675; }
+@media (max-width: 480px) {
+  .pnl-calendar-legend { font-size: 9.5px; gap: 4px 10px; }
+}

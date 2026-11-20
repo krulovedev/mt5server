@@ -141,6 +141,24 @@ const API = '';
       return 'var(--red)';
     }
 
+    // แถว DD ต่อวันในปฏิทิน P&L
+    // ใช้ Max DD (floating loss) ที่ EA ส่งมาเป็นหลัก ถ้าไม่มีข้อมูลจึง fallback เป็น balance DD
+    function dayExtraHtml(d, faded) {
+      const op = faded ? ' style="opacity:0.6"' : '';
+      const ddFloat  = d.max_dd_float || 0;
+      const ddLots   = d.max_dd_float_lots || 0;
+      const maxDd    = d.max_dd || 0;
+      const maxDdAmt = d.max_dd_amt || 0;
+      const maxLots  = d.max_lots || 0;
+      if (ddFloat > 0) {
+        return `<div class="day-extra"${op}><div style="color:var(--red)">DD: ${fmt(ddFloat)}</div><div>L: ${fmt(ddLots,2)}</div></div>`;
+      }
+      if (maxDdAmt > 0 || maxDd > 0) {
+        return `<div class="day-extra"${op}><div style="color:${ddColor(maxDd)}">DD: ${fmt(maxDdAmt)} (${fmt(maxDd,1)}%)</div><div>L: ${fmt(maxLots,2)}</div></div>`;
+      }
+      return '';
+    }
+
     function getStatus(ts) {
       if(!ts) return 'offline';
       const d = parseToBangkok(ts);
@@ -963,14 +981,11 @@ const API = '';
         cell.className = `pnl-day-cell other-month${isWeekend ? ' weekend' : ''}`;
         
         let valHtml = '';
-        if (dayDataMap[dateStr] && dayDataMap[dateStr].has_data && dayDataMap[dateStr].profit !== 0) {
-          const profit = dayDataMap[dateStr].profit;
-          const cls = profit > 0 ? 'pnl-pos' : 'pnl-neg';
-          const maxDd = dayDataMap[dateStr].max_dd || 0;
-          const maxDdAmt = dayDataMap[dateStr].max_dd_amt || 0;
-          const maxLots = dayDataMap[dateStr].max_lots || 0;
-          valHtml = `<div class="day-val ${cls}">${profit > 0 ? '+' : ''}${fmt(profit)}</div>
-                     <div class="day-extra" style="opacity:0.6"><div style="color:${ddColor(maxDd)}">DD: ${fmt(maxDdAmt)} (${fmt(maxDd,1)}%)</div><div>L: ${fmt(maxLots,2)}</div></div>`;
+        const dd0 = dayDataMap[dateStr];
+        if (dd0 && dd0.has_data && ((dd0.profit || 0) !== 0 || (dd0.max_dd_float || 0) > 0)) {
+          const profit = dd0.profit;
+          const cls = profit > 0 ? 'pnl-pos' : (profit < 0 ? 'pnl-neg' : '');
+          valHtml = `<div class="day-val ${cls}">${profit > 0 ? '+' : ''}${fmt(profit)}</div>` + dayExtraHtml(dd0, true);
         }
         
         cell.innerHTML = `
@@ -1009,13 +1024,17 @@ const API = '';
           const maxDd = dayData.max_dd || 0;
           const maxDdAmt = dayData.max_dd_amt || 0;
           const maxLots = dayData.max_lots || 0;
-          valHtml = profitHtml + `<div class="day-extra"><div style="color:${ddColor(maxDd)}">DD: ${fmt(maxDdAmt)} (${fmt(maxDd,1)}%)</div><div>L: ${fmt(maxLots,2)}</div></div>`;
+          valHtml = profitHtml + dayExtraHtml(dayData, false);
         } else {
           valHtml = `<div class="day-val" style="color:var(--muted); font-size:9px;">—</div>`;
         }
         
         cell.className = cellClass;
-        cell.title = dayData ? `Balance: ${fmt(dayData.balance)}\nWithdrawal: ${fmt(dayData.withdrawal)}` : '';
+        cell.title = dayData
+          ? `Balance: ${fmt(dayData.balance)}\nWithdrawal: ${fmt(dayData.withdrawal)}\nDeposit: ${fmt(dayData.net_deposit)}\n` +
+            `Max DD (floating จาก EA): ${fmt(dayData.max_dd_float)}\nLots ตอน DD สูงสุด: ${fmt(dayData.max_dd_float_lots,2)}\n` +
+            `Balance DD: ${fmt(dayData.max_dd_amt)} (${fmt(dayData.max_dd,1)}%)`
+          : '';
         cell.innerHTML = `
           <div class="day-num">${day}</div>
           ${valHtml}
@@ -1036,14 +1055,11 @@ const API = '';
         cell.className = `pnl-day-cell other-month${isWeekend ? ' weekend' : ''}`;
         
         let valHtml = '';
-        if (dayDataMap[dateStr] && dayDataMap[dateStr].has_data && dayDataMap[dateStr].profit !== 0) {
-          const profit = dayDataMap[dateStr].profit;
-          const cls = profit > 0 ? 'pnl-pos' : 'pnl-neg';
-          const maxDd = dayDataMap[dateStr].max_dd || 0;
-          const maxDdAmt = dayDataMap[dateStr].max_dd_amt || 0;
-          const maxLots = dayDataMap[dateStr].max_lots || 0;
-          valHtml = `<div class="day-val ${cls}">${profit > 0 ? '+' : ''}${fmt(profit)}</div>
-                     <div class="day-extra" style="opacity:0.6"><div style="color:${ddColor(maxDd)}">DD: ${fmt(maxDdAmt)} (${fmt(maxDd,1)}%)</div><div>L: ${fmt(maxLots,2)}</div></div>`;
+        const dd0 = dayDataMap[dateStr];
+        if (dd0 && dd0.has_data && ((dd0.profit || 0) !== 0 || (dd0.max_dd_float || 0) > 0)) {
+          const profit = dd0.profit;
+          const cls = profit > 0 ? 'pnl-pos' : (profit < 0 ? 'pnl-neg' : '');
+          valHtml = `<div class="day-val ${cls}">${profit > 0 ? '+' : ''}${fmt(profit)}</div>` + dayExtraHtml(dd0, true);
         }
         
         cell.innerHTML = `
@@ -1143,6 +1159,22 @@ const API = '';
       
       $('pnl-stat-best-day').textContent = bestProfit > -Infinity ? (bestProfit > 0 ? '+' : '') + fmt(bestProfit) + ` (${bestDate.substring(8, 10)})` : '—';
       $('pnl-stat-worst-day').textContent = worstProfit < Infinity ? fmt(worstProfit) + ` (${worstDate.substring(8, 10)})` : '—';
+
+      // Max DD (floating) ของเดือน — จากข้อมูลที่ EA ส่งมา
+      let mMaxDdFloat = 0, mMaxDdFloatLots = 0, mMaxDdDate = '';
+      monthlyDays.forEach(d => {
+        if (d.has_data && (d.max_dd_float || 0) > mMaxDdFloat) {
+          mMaxDdFloat = d.max_dd_float;
+          mMaxDdFloatLots = d.max_dd_float_lots || 0;
+          mMaxDdDate = d.date;
+        }
+      });
+      const mDdEl = $('pnl-stat-max-dd');
+      if (mDdEl) {
+        mDdEl.textContent = mMaxDdFloat > 0
+          ? `${fmt(mMaxDdFloat)} (L ${fmt(mMaxDdFloatLots,2)}) · วันที่ ${mMaxDdDate.substring(8, 10)}`
+          : '—';
+      }
       
       // 2. Render Annual Summary Table
       let yearlyTableHtml = '';

@@ -20,6 +20,12 @@
 
 <!-- Calendar Display Grid -->
 <div class="pnl-card calendar-card">
+  <div class="pnl-calendar-legend">
+    <span><b>ตัวเลขใหญ่</b> = กำไร/ขาดทุนของวัน (ตามเวลา broker)</span>
+    <span><b style="color:var(--red)">DD</b> = จุดที่ขาดทุนลอยตัว (floating) สูงสุดของวัน — จาก EA</span>
+    <span><b>L</b> = lots ที่เปิดตอน DD สูงสุด</span>
+    <span class="legend-note">ชี้ที่ช่องเพื่อดูรายละเอียด (balance / ถอน / ฝาก / balance DD)</span>
+  </div>
   <div class="pnl-calendar-header">
     <div>อา.</div>
     <div>จ.</div>
@@ -64,6 +70,10 @@
   <div class="stat-box">
     <div class="label">วันที่ขาดทุนสูงสุด</div>
     <div class="val" id="pnl-stat-worst-day" style="color:var(--red)">—</div>
+  </div>
+  <div class="stat-box">
+    <div class="label">Max DD (floating) เดือนนี้</div>
+    <div class="val" id="pnl-stat-max-dd" style="color:var(--red)">—</div>
   </div>
 </div>
 

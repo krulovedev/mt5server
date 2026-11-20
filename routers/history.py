@@ -223,14 +223,18 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
             alias, f"{year}-01-01T00:00:00", f"{year}-12-31T23:59:59"
         )
         
-        # 4. Aggregates for each day (max DD and max lots)
+        # 4. Aggregates for each day (max DD และ lots)
+        #    max_dd / max_dd_amt = DD จาก balance (คำนวณฝั่ง server)
+        #    max_dd_float / max_dd_float_lots = Max DD จาก floating loss ที่ EA ส่งมา
         agg_rows = await conn.fetch(
             """
             SELECT 
                 SUBSTRING(ts, 1, 10) AS date_str,
                 MAX(drawdown_pct) as max_dd,
                 MAX(drawdown_amount) as max_dd_amt,
-                MAX(total_lots) as max_lots
+                MAX(total_lots) as max_lots,
+                MAX(dd_today) as max_dd_float,
+                MAX(dd_today_lots) as max_dd_float_lots
             FROM snapshots
             WHERE alias = $1 AND ts >= $2 AND ts <= $3
             GROUP BY SUBSTRING(ts, 1, 10)
@@ -256,7 +260,11 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
         r["date_str"]: (r["balance"], r["withdrawal"] or 0.0, r["net_deposit"] or 0.0)
         for r in rows
     }
-    day_aggs = {r["date_str"]: (r["max_dd"] or 0.0, r.get("max_dd_amt") or 0.0, r["max_lots"] or 0.0) for r in agg_rows}
+    day_aggs = {
+        r["date_str"]: (r["max_dd"] or 0.0, r.get("max_dd_amt") or 0.0, r["max_lots"] or 0.0,
+                        r.get("max_dd_float") or 0.0, r.get("max_dd_float_lots") or 0.0)
+        for r in agg_rows
+    }
     
     seen_positive_withdraw = (prev_withdraw > 0)
     seen_positive_deposit = (prev_deposit > 0)
@@ -280,11 +288,13 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
                 "max_dd": 0.0,
                 "max_dd_amt": 0.0,
                 "max_lots": 0.0,
+                "max_dd_float": 0.0,
+                "max_dd_float_lots": 0.0,
                 "has_data": False
             })
         elif date_str in day_snapshots:
             bal, withdraw, deposit = day_snapshots[date_str]
-            max_dd, max_dd_amt, max_lots = day_aggs.get(date_str, (0.0, 0.0, 0.0))
+            max_dd, max_dd_amt, max_lots, max_dd_float, max_dd_float_lots = day_aggs.get(date_str, (0.0, 0.0, 0.0, 0.0, 0.0))
             if prev_bal is not None:
                 # แก้ไขการกระโดดของข้อมูลเมื่อเริ่มมีการส่งข้อมูล deposit/withdrawal เป็นครั้งแรก
                 # หากค่าเดิมเป็น 0 แต่ค่าใหม่มีค่า ให้ถือว่าค่าใหม่คือค่าที่แท้จริงตั้งแต่เริ่มต้น (เพื่อให้ผลต่างกำไรไม่เพี้ยน)
@@ -313,6 +323,8 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
                 "max_dd": round(max_dd, 2),
                 "max_dd_amt": round(max_dd_amt, 2),
                 "max_lots": round(max_lots, 2),
+                "max_dd_float": round(max_dd_float, 2),
+                "max_dd_float_lots": round(max_dd_float_lots, 2),
                 "has_data": True
             })
         else:
@@ -325,6 +337,8 @@ async def get_pnl_calendar(alias: str, year: int = Query(..., ge=2000, le=2100))
                 "max_dd": 0.0,
                 "max_dd_amt": 0.0,
                 "max_lots": 0.0,
+                "max_dd_float": 0.0,
+                "max_dd_float_lots": 0.0,
                 "has_data": False
             })
             

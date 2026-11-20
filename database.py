@@ -1,5 +1,6 @@
 import asyncpg
 import pytz
+from datetime import datetime, timedelta
 from typing import Dict
 from pydantic import BaseModel
 import os
@@ -272,6 +273,41 @@ async def get_account_types(force: bool = False) -> Dict[str, str]:
 def invalidate_account_types():
     _type_cache["ts"]  = 0.0
     _type_cache["map"] = {}
+
+# ---- เวลา broker ของแต่ละบัญชี --------------------------------------
+# snapshot.ts เป็น "เวลา broker" (MT5) ไม่ใช่เวลา UTC/Bangkok
+# หา offset ต่อ alias จาก ts ล่าสุดเทียบกับ received_at (เวลา server) แล้วปัดเป็น 15 นาที
+_broker_cache = {"ts": 0.0, "map": {}}
+
+async def get_broker_offsets(force: bool = False) -> Dict[str, int]:
+    """คืน map alias -> offset วินาที (broker_time - UTC)"""
+    now = time.time()
+    if not force and _broker_cache["map"] and (now - _broker_cache["ts"] < 300):
+        return _broker_cache["map"]
+    if pool is None:
+        return {}
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT DISTINCT ON (alias) alias, ts, extract(epoch FROM received_at) AS recv_epoch
+            FROM snapshots
+            ORDER BY alias, ts DESC
+        """)
+    m = {}
+    for r in rows:
+        try:
+            broker_ts = datetime.strptime(r["ts"], '%Y-%m-%dT%H:%M:%S')
+            server_utc = datetime.utcfromtimestamp(float(r["recv_epoch"]))
+            off = (broker_ts - server_utc).total_seconds()
+            m[r["alias"]] = int(round(off / 900.0) * 900)   # ปัดเป็น 15 นาที
+        except Exception:
+            continue
+    _broker_cache["ts"]  = now
+    _broker_cache["map"] = m
+    return m
+
+def invalidate_broker_offsets():
+    _broker_cache["ts"]  = 0.0
+    _broker_cache["map"] = {}
 
 async def close_db_pool():
     global pool
