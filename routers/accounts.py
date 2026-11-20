@@ -65,16 +65,17 @@ async def get_stats_realized(mode: str = Query(None, description="real | demo | 
         t = db.latest_cache[alias].get("account_type") or types.get(alias, "unknown")
         return t == m
 
-    if last_bals_update is None or (now - last_bals_update).total_seconds() > 300:
+    # สร้าง/รีเฟรชแคช baseline — ต้องทำกับ "ทุก alias" เสมอ ห้ามกรองตามโหมด
+    # (เดิมกรองตามโหมด ทำให้ alias ของโหมดอื่นหลุดจากแคช → คืน null → หน้าเว็บขึ้น —)
+    missing = [a for a in db.latest_cache.keys() if a not in cached_historical]
+    if last_bals_update is None or (now - last_bals_update).total_seconds() > 300 or missing:
         async with db.pool.acquire() as conn:
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%dT%H:%M:%S')
             monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
             week_start = monday.strftime('%Y-%m-%dT%H:%M:%S')
             
-            new_cache = {}
+            new_cache = dict(cached_historical)
             for alias in db.latest_cache.keys():
-                if not _allowed(alias):
-                    continue
                 current_w = db.latest_cache[alias].get("withdrawal", 0.0) or 0.0
                 current_d = db.latest_cache[alias].get("net_deposit", 0.0) or 0.0
                 
@@ -149,6 +150,9 @@ async def get_stats_realized(mode: str = Query(None, description="real | demo | 
                     "ww": ww_value,
                     "dw": dw_value or 0.0,
                 }
+            # ลบ alias ที่ถูกลบออกจากระบบแล้ว
+            for gone in [a for a in new_cache.keys() if a not in db.latest_cache]:
+                new_cache.pop(gone, None)
             cached_historical = new_cache
             last_bals_update = now
             
