@@ -639,3 +639,12 @@ input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 4px; }
 @media (max-width: 480px) {
   .pnl-calendar-legend { font-size: 9.5px; gap: 4px 10px; }
 }
+
+/* ===== ตัวเลข lots ต่อท้ายกำไรบนการ์ด ===== */
+.metric-lots {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.metric-val { font-weight: inherit; }

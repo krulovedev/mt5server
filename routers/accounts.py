@@ -35,6 +35,7 @@ async def get_latest(mode: str = Query(None, description="real | demo | contest 
     """ข้อมูลล่าสุดของทุก account สำหรับ overview (Fast) — กรองตามประเภทบัญชีได้"""
     m = _mode_filter(mode)
     types = await db.get_account_types() if m else None
+    offsets = await db.get_broker_offsets()   # ใช้จัดหน้าต่างเวลาให้ตรงกับ ts ของบัญชี
 
     result = []
     for alias, data in db.latest_cache.items():
@@ -47,6 +48,7 @@ async def get_latest(mode: str = Query(None, description="real | demo | contest 
         entry["realized_today"] = None
         entry["realized_week"] = None
         entry["realized_all"] = None
+        entry["broker_offset"] = offsets.get(alias, 0)   # วินาที (broker_time - UTC)
         result.append(entry)
     return result
 

@@ -130,6 +130,33 @@ const API = '';
       return p[0]+'T'+p[1];
     }
 
+    // วันเวลาแบบย่อ เช่น 25/11/26 09:30
+    function fmtShort(s) {
+      const d = parseToBangkok(s);
+      if(!d || isNaN(d.getTime())) return '';
+      return new Intl.DateTimeFormat('en-GB', {
+        timeZone:'Asia/Bangkok',
+        day:'2-digit', month:'2-digit', year:'2-digit',
+        hour:'2-digit', minute:'2-digit', hour12:false
+      }).format(d).replace(',', '');
+    }
+
+    // snapshot.ts เป็นเวลา broker ของแต่ละบัญชี แต่ช่วงเวลาที่ผู้ใช้เลือกเป็น Bangkok
+    // ฟังก์ชันนี้เลื่อนหน้าต่างเวลาให้ตรงกับนาฬิกา broker ของ alias นั้น
+    function brokerDeltaMinutes(alias) {
+      const acc = latestAccountsCache[alias] || {};
+      const offSec = (acc.broker_offset == null ? 720 : acc.broker_offset);  // วินาที (broker - UTC)
+      return (offSec / 60) - 420;   // Bangkok = UTC+7 (420 นาที)
+    }
+
+    function shiftIsoForBroker(isoStr, alias) {
+      const delta = brokerDeltaMinutes(alias);
+      if(!delta) return isoStr;
+      const d = new Date(isoStr.replace(' ', 'T') + '+07:00');
+      if(isNaN(d.getTime())) return isoStr;
+      return toBangkokISO(new Date(d.getTime() + delta * 60000));
+    }
+
     function showToast(msg, color='var(--green)') {
       const t=$('toast'); t.textContent=msg; t.style.borderColor=color;
       t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),3000);
@@ -254,23 +281,26 @@ const API = '';
           const card=document.createElement('div');
           card.className='account-card'+(selectedAlias===acc.alias?' selected':'');
           card.onclick=()=>selectAccount(acc.alias,card);
+
+          // lots ในวงเล็บต่อท้ายกำไร (ใช้ vol_* จาก EA; ถ้าไม่มีข้อมูลก็ไม่แสดง)
+          const lotsInParen = v => (v==null || v==='') ? '' : ` <span class="metric-lots">(${fmt(v,2)})</span>`;
           const hasExt = (acc.dd_today!=null || acc.dd_week!=null || acc.dd_total!=null);
           const extBlock = hasExt ? `
         <div class="mt5dd-grid">
           <div class="mt5dd-item">
             <div class="mt5dd-label">DD Today <span>(floating)</span></div>
             <div class="mt5dd-val" style="color:var(--red)">${acc.dd_today==null?'—':fmt(acc.dd_today)}</div>
-            <div class="mt5dd-sub">${acc.dd_today_lots==null?'—':fmt(acc.dd_today_lots,2)+' lots'}${acc.dd_today_at?' · '+fmtDate(acc.dd_today_at):''}</div>
+            <div class="mt5dd-sub">${acc.dd_today_lots==null?'—':fmt(acc.dd_today_lots,2)}${acc.dd_today_at?' · '+fmtShort(acc.dd_today_at):''}</div>
           </div>
           <div class="mt5dd-item">
             <div class="mt5dd-label">DD Week <span>(floating)</span></div>
             <div class="mt5dd-val" style="color:var(--red)">${acc.dd_week==null?'—':fmt(acc.dd_week)}</div>
-            <div class="mt5dd-sub">${acc.dd_week_lots==null?'—':fmt(acc.dd_week_lots,2)+' lots'}${acc.dd_week_at?' · '+fmtDate(acc.dd_week_at):''}</div>
+            <div class="mt5dd-sub">${acc.dd_week_lots==null?'—':fmt(acc.dd_week_lots,2)}${acc.dd_week_at?' · '+fmtShort(acc.dd_week_at):''}</div>
           </div>
           <div class="mt5dd-item">
             <div class="mt5dd-label">DD Total <span>(floating)</span></div>
             <div class="mt5dd-val" style="color:var(--red)">${acc.dd_total==null?'—':fmt(acc.dd_total)}</div>
-            <div class="mt5dd-sub">${acc.dd_total_lots==null?'—':fmt(acc.dd_total_lots,2)+' lots'}${acc.dd_total_at?' · '+fmtDate(acc.dd_total_at):''}</div>
+            <div class="mt5dd-sub">${acc.dd_total_lots==null?'—':fmt(acc.dd_total_lots,2)}${acc.dd_total_at?' · '+fmtShort(acc.dd_total_at):''}</div>
           </div>
         </div>` : '';
           card.innerHTML=`
@@ -287,11 +317,11 @@ const API = '';
           <div class="metric"><div class="metric-label">Withdrawal (นับจากเริ่มบันทึก)</div><div class="metric-value" id="nw-${acc.alias}" style="color:var(--yellow)">...</div></div>
           <div class="metric"><div class="metric-label">Deposit (นับจากเริ่มบันทึก)</div><div class="metric-value" id="nd-${acc.alias}" style="color:var(--accent)">...</div></div>
           
-          <div class="metric"><div class="metric-label">Profit Today</div><div class="metric-value" id="rt-${acc.alias}">${acc.realized_today==null?'...':fmtN(acc.realized_today)}</div></div>
-          <div class="metric"><div class="metric-label">Profit This Week</div><div class="metric-value" id="rw-${acc.alias}">${acc.realized_week==null?'...':fmtN(acc.realized_week)}</div></div>
+          <div class="metric"><div class="metric-label">Profit Today</div><div class="metric-value"><span class="metric-val" id="rt-${acc.alias}">${acc.realized_today==null?'...':fmtN(acc.realized_today)}</span>${lotsInParen(acc.vol_today)}</div></div>
+          <div class="metric"><div class="metric-label">Profit This Week</div><div class="metric-value"><span class="metric-val" id="rw-${acc.alias}">${acc.realized_week==null?'...':fmtN(acc.realized_week)}</span>${lotsInParen(acc.vol_week)}</div></div>
           
-          <div class="metric"><div class="metric-label">Profit All-Time</div><div class="metric-value" id="ra-${acc.alias}">${acc.realized_all==null?'...':fmtN(acc.realized_all)}</div></div>
-          <div class="metric"><div class="metric-label">Floating Profit</div><div class="metric-value ${profitClass}">${fmtN(acc.profit)}</div></div>
+          <div class="metric"><div class="metric-label">Profit All-Time</div><div class="metric-value"><span class="metric-val" id="ra-${acc.alias}">${acc.realized_all==null?'...':fmtN(acc.realized_all)}</span>${lotsInParen(acc.vol_total)}</div></div>
+          <div class="metric"><div class="metric-label">Floating Profit</div><div class="metric-value ${profitClass}">${fmtN(acc.profit)}${lotsInParen(acc.total_lots)}</div></div>
           
           <div class="metric"><div class="metric-label">Margin Level</div><div class="metric-value ${acc.margin_level>200?'positive':acc.margin_level>100?'warn':'negative'}">${fmt(acc.margin_level)}%</div></div>
           <div class="metric"><div class="metric-label">Free Margin</div><div class="metric-value">${fmt(acc.free_margin)}</div></div>
@@ -330,7 +360,7 @@ const API = '';
             const el = document.getElementById(id+'-'+alias);
             if(el){
               el.textContent = isProfit ? fmtN(val) : fmt(val);
-              el.className = 'metric-value '+(isProfit ? (val>=0?'positive':'negative') : '');
+              el.className = 'metric-val '+(isProfit ? (val>=0?'positive':'negative') : '');
               if(!isProfit) el.style.color = customColor || 'var(--yellow)';
             }
           };
@@ -395,8 +425,9 @@ const API = '';
         const hrs=detailHours;
         const endNow=new Date();
         const startNow=new Date(endNow-hrs*3600000);
-        const startISO=toBangkokISO(startNow);
-        const endISO=toBangkokISO(endNow);
+        // เลื่อนหน้าต่างเวลาให้ตรงกับนาฬิกา broker ของบัญชีนี้ (ts ใน DB เป็นเวลา broker)
+        const startISO=shiftIsoForBroker(toBangkokISO(startNow), selectedAlias);
+        const endISO=shiftIsoForBroker(toBangkokISO(endNow), selectedAlias);
         try {
           const [hRes,sRes,aRes]=await Promise.all([
             fetch(`${API}/api/history/${selectedAlias}?start=${startISO}&end=${endISO}&limit=2000&field=balance,equity,drawdown_pct,profit,open_orders,total_lots,ts,withdrawal`),
@@ -510,6 +541,8 @@ const API = '';
       const limit=$('hist-limit').value;
       if(start&&start.length===16) start+=':00';
       if(end&&end.length===16) end+=':59';
+      start=shiftIsoForBroker(start, alias);
+      end=shiftIsoForBroker(end, alias);
       const wrap=$('history-table-wrap');
       wrap.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted)">กำลังโหลด...</div>';
       const res=await fetch(`${API}/api/history/${alias}?start=${start}&end=${end}&limit=${limit}&field=balance,equity,profit,drawdown_pct,equity_dd_pct,margin_level,open_orders,total_lots,buy_lots,sell_lots,ts,withdrawal,net_deposit`);
